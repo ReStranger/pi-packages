@@ -25,6 +25,7 @@ import { PermissionResolver } from "#src/policy/permission-resolver";
 import type { Ruleset } from "#src/policy/rule";
 import { PermissionSession } from "#src/session/permission-session";
 import { SessionRules } from "#src/session/session-rules";
+import { SessionYoloOverride } from "#src/session/yolo-override";
 import type { PermissionCheckResult, PermissionState } from "#src/types";
 
 // ── Per-collaborator fake factories ────────────────────────────────────────
@@ -132,6 +133,7 @@ export function makeRealSession(overrides?: {
   configStore?: SessionConfigStore;
   authorizerSelection?: AuthorizerSelectionLifecycle;
   flavor?: PathFlavor;
+  yoloOverride?: SessionYoloOverride;
 }): {
   session: PermissionSession;
   paths: ExtensionPaths;
@@ -141,6 +143,7 @@ export function makeRealSession(overrides?: {
   sessionRules: SessionRules;
   configStore: SessionConfigStore;
   authorizerSelection: AuthorizerSelectionLifecycle;
+  yoloOverride: SessionYoloOverride;
 } {
   const paths = makePaths(overrides?.paths);
   const logger = overrides?.logger ?? makeLogger();
@@ -154,6 +157,7 @@ export function makeRealSession(overrides?: {
   const authorizerSelection =
     overrides?.authorizerSelection ?? makeAuthorizerSelection();
   const flavor = overrides?.flavor ?? pathFlavorForPlatform(process.platform);
+  const yoloOverride = overrides?.yoloOverride ?? new SessionYoloOverride();
   const session = new PermissionSession(
     paths,
     forwarding,
@@ -162,6 +166,7 @@ export function makeRealSession(overrides?: {
     configStore,
     authorizerSelection,
     flavor,
+    yoloOverride,
   );
   return {
     session,
@@ -172,6 +177,7 @@ export function makeRealSession(overrides?: {
     sessionRules,
     configStore,
     authorizerSelection,
+    yoloOverride,
   };
 }
 
