@@ -41,7 +41,6 @@ Check whether prior sessions have already done work on this issue:
 1. Extract the issue number from the plan filename (pattern `NNNN-`) or its frontmatter `issue:` field.
 2. Search for an existing retro file: look for `packages/*/docs/retro/NNNN-*.md` and `docs/retro/NNNN-*.md` matching the issue number.
 3. If a retro file exists, read it.
-   Prior stage entries contain summaries and observations from earlier sessions (e.g., planning decisions, risks identified, alternatives rejected).
 4. Use this context to inform your work — it may contain warnings about edge cases, decisions that were already debated, or friction points to avoid repeating.
 
 ## Load skills
@@ -64,7 +63,7 @@ Before writing any code, confirm the starting state is clean:
    Package-scoped lint (`pnpm --filter …`) silently passes on `MD051` cross-file fragment links and cross-package issues that CI's root lint catches.
 3. `pnpm run test` — must pass.
 4. `pnpm fallow dead-code` **from the repo root** — must pass.
-   CI gates it on every `main` push, so a finding at the end is only actionable if you know whether the baseline was clean (Refs #714).
+   CI gates it on every `main` push, so a finding at the end is only actionable if you know whether the baseline was clean.
 
 If a check fails on an issue your change will not touch (e.g. a pre-existing lint warning in an unrelated doc), fix it as a separate cleanup commit (`docs:`, `style:`, or `fix:` as appropriate) to establish a green baseline, then proceed.
 If the failure is non-trivial, or you cannot quickly establish why it is failing, stop and report to the user.
@@ -80,10 +79,10 @@ For **each** step in the plan's "TDD Order", in order:
 
 1. **Red.**
    Write the failing tests the step describes.
-   Run only the affected test file: `pnpm --filter @gotgenes/<pkg> exec vitest run <test-path>` and confirm failures (plain `pnpm vitest run` fails at the repo root in this workspace).
+   Run only the affected test file, unpiped: `pnpm --filter @gotgenes/<pkg> exec vitest run <test-path>` and confirm failures (plain `pnpm vitest run` fails at the repo root in this workspace; a `| tail` or `| grep` replaces Vitest's exit status with the filter's).
    When the step pins a literal pattern (regex, glob, format string), derive your own input set — the plan's examples are a floor, not the case list.
-   Run the pattern over the values the repo already produces in bulk (`git tag --list`, `gh pr list`) before committing (Refs #817).
-   When the step quotes a string the code under test **produces** (a rendered sentence, an error message), copy it from the producer or an existing assertion — a plan transcribes it from memory and drops an article (Refs #772, #844).
+   Run the pattern over the values the repo already produces in bulk (`git tag --list`, `gh pr list`) before committing.
+   When the step quotes a string the code under test **produces** (a rendered sentence, an error message), copy it from the producer or an existing assertion — a plan transcribes it from memory and drops an article.
 2. **Green.**
    Implement the minimum code to make those tests pass.
    Re-run the same file and confirm green.
@@ -95,16 +94,16 @@ For **each** step in the plan's "TDD Order", in order:
    - The step's red came from a **signature change** (a required field that did not exist yet), so every test failed for the same reason and none of them demonstrated that its own assertion discriminates.
    - A test was **authored or rewritten after Green**, so it never had a Red step at all.
    - The step's tests span more than one equivalence class — one mutation kills one class, so a surviving test is only evidence when you can say which mutation should have killed it.
-   - A new test **stayed green during Red**, so Red produced no evidence it discriminates — a deliberate regression pin and a vacuous probe look identical (Refs #801).
-   - The step **relocated** an existing call or registration, so the plan's mutations cover the code it authored and not the line that merely changed sites (Refs #827).
+   - A new test **stayed green during Red**, so Red produced no evidence it discriminates — a deliberate regression pin and a vacuous probe look identical.
+   - The step **relocated** an existing call or registration, so the plan's mutations cover the code it authored and not the line that merely changed sites.
 
-   Save the green file first (`cp <file> /tmp/green.ts`) and restore from that copy; `git checkout -- <file>` reverts to HEAD, discarding the step's own uncommitted green edit (Refs #830).
+   Save the green file first (`cp <file> /tmp/green.ts`) and restore from that copy; `git checkout -- <file>` reverts to HEAD, discarding the step's own uncommitted green edit.
    Run that `cp` in its own tool call, before the mutating `Edit`: calls in one batch run concurrently, so the copy can capture the mutation.
    Re-run before committing; never commit with a mutation in the tree.
-   Apply the mutation with `Edit`, and confirm the file changed before reading the suite — a scripted multi-line substitution that matches nothing reads exactly like a mutation that killed nothing, and one that matches every sibling site reddens tests the mutation was never meant to touch (Refs #870).
-   Prefer changing a compared literal over restructuring control flow: a mutation that crashes, or that the linter rejects, produces reds that are not discrimination signals (Refs #883).
-   Such a mutation can also produce too *few* reds — swapping a guard's `return x` for a `throw` changes nothing observable when a downstream `catch` returns `x` too (Refs #920).
-   Count the reds against the step's prediction: a mutation that kills fewer tests than the plan named is a finding, not a pass — the test was never written, the plan's claim was wrong, or the mutated code is dead (Refs #844, #894).
+   Apply the mutation with `Edit`, and confirm the file changed before reading the suite — a scripted multi-line substitution that matches nothing reads exactly like a mutation that killed nothing, and one that matches every sibling site reddens tests the mutation was never meant to touch.
+   Prefer changing a compared literal over restructuring control flow: a mutation that crashes, or that the linter rejects, produces reds that are not discrimination signals.
+   Such a mutation can also produce too *few* reds — swapping a guard's `return x` for a `throw` changes nothing observable when a downstream `catch` returns `x` too.
+   Count the reds against the step's prediction: a mutation that kills fewer tests than the plan named is a finding, not a pass — the test was never written, the plan's claim was wrong, or the mutated code is dead.
 4. **Commit.**
    Use the commit message the plan suggests, or a Conventional Commits message that matches:
    - `test:` for test-only commits (rare; usually folded into the feat).
@@ -143,7 +142,7 @@ The skill exits at its first step when no phase is open, and recording a disposi
    Running from a package subdirectory detects fewer entry points than CI, producing false positives that become stale suppressions in CI.
    If it exits non-zero, load the `fallow` skill and fix the findings — prefer declaring a real contract (`implements`) or removing dead exports over suppressing; suppress only verified false positives.
    Commit fixes as part of the most recent feat commit (amend) if not yet pushed; otherwise as a `fix:` commit.
-   If the plan names a quantitative target (a complexity/CRAP score, a clone count, a refactoring-target drop-off), load the `fallow` skill to find the right verification subcommand — confirm a file left the targets list with `fallow health --targets --format json` (an empty `targets` array), not by grepping the human-readable output (Refs #537).
+   If the plan names a quantitative target (a complexity/CRAP score, a clone count, a refactoring-target drop-off), load the `fallow` skill to find the right verification subcommand — confirm a file left the targets list with `fallow health --targets --format json` (an empty `targets` array), not by grepping the human-readable output.
 5. Check for unstaged lockfile changes: `git diff --name-only pnpm-lock.yaml pnpm-workspace.yaml`.
    `pnpm install` can touch `pnpm-workspace.yaml` too (a `minimumReleaseAgeExclude` entry when a dependency is bumped to a freshly-published version).
    If modified, stage and commit it as part of the most recent feat commit (amend if not yet pushed) or as a separate `fix:` commit.
@@ -151,14 +150,14 @@ The skill exits at its first step when no phase is open, and recording a disposi
    If a listed file was not touched, update it now or note the deviation.
 7. If `packages/<PKG>/docs/architecture/` exists, check whether the changes affect the module structure or data-flow descriptions and update them.
    If the issue completes a roadmap step, prefix `✅` on both the step heading and its Mermaid diagram node — a `Landed:` detail line is not a substitute for the `✅`.
-   Confirm both landed before committing: `grep -cE '✅.*#<N>\b' <arch-doc>` must report 2 — no lint gate sees a missing `✅` (Refs #872).
+   Confirm both landed before committing: `grep -cE '✅.*#<N>\b' <arch-doc>` must report 2 — no lint gate sees a missing `✅`.
    Key it on the issue number, not the step's ordinal: the heading and the node both carry `#<N>` whether the phase identifies its steps by ordinal or by issue.
    Flip the phase status row only when every step in the phase is done.
 8. Commit doc updates as `docs: <summary>`.
 9. Preview the changelog: `git log --format='%s' <plan-commit>..HEAD | grep -E '^(feat|fix)'`.
    Every surviving line must name a user-observable outcome, not an internal seam.
    A seam-named line is either a mistyped commit (retype to `refactor:`) or a correct `fix:`/`feat:` with a mechanism-named subject (reword to the symptom).
-   Fix either now, while nothing is pushed (Refs #724).
+   Fix either now, while nothing is pushed.
 10. **Do not edit `CHANGELOG.md`** — the release workflow owns it and will generate entries from your Conventional Commit messages on the next release.
 
 ## Pre-completion review
@@ -212,7 +211,7 @@ Before stopping, persist implementation observations for cross-session continuit
 4. Commit: `git add <retro-file> && git commit -m "docs(retro): add TDD stage notes for issue #N"`.
 
 Wrap code identifiers, filenames, and text containing underscores in backticks in the retro file.
-Name a commit by its subject, not its SHA, when the work is on an `issue-<N>-*` branch — `/sync-worktree`'s rebase rewrites every branch SHA (Refs #814, #914).
+Name a commit by its subject, not its SHA, when the work is on an `issue-<N>-*` branch — `/sync-worktree`'s rebase rewrites every branch SHA.
 Append with the `Edit` tool (or `Write` for a new file), not a shell heredoc.
 When appending a new stage to an existing retro, anchor the `Edit` on the file's last line or use `Write` with the full content — the repeated `### Observations` / `### Session summary` headers make header-anchored edits ambiguous.
 

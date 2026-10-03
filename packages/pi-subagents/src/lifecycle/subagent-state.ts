@@ -30,6 +30,27 @@ export type SubagentStatus =
 	| "stopped"
 	| "error";
 
+/**
+ * One carrier's commitment to deliver an outcome. Releasing it drops only this
+ * commitment, so the outcome stays claimed while any other carrier holds one.
+ */
+export interface CarrierClaim {
+	release(): void;
+}
+
+/** What a settled run ended with: the fields an outcome carrier renders. */
+export interface SettledOutcome {
+	status: SubagentStatus;
+	result: string | undefined;
+	error: string | undefined;
+	startedAt: number;
+	completedAt: number | undefined;
+	pendingQuestion: string | undefined;
+	workspaceNotice: string | undefined;
+	/** The updates no announcement delivered; what the carrier still owes. */
+	runUpdates: readonly string[];
+}
+
 // ---- Status classification predicates ----
 // The single decision point for the re-derived status groupings. Instance
 // methods on SubagentState delegate here; DTO consumers holding a bare
@@ -116,8 +137,22 @@ export class SubagentState {
 	// Transient runtime ownership, so deliberately not seedable via
 	// SubagentStateInit — a rehydrated record must not claim a carrier that no
 	// longer exists.
-	private _claimed = false;
-	get claimed(): boolean { return this._claimed; }
+	// One entry per carrier, so a carrier that abandons its commitment drops only
+	// its own: another carrier holding the same outcome still delivers it.
+	private readonly _claims = new Set<CarrierClaim>();
+	get claimed(): boolean { return this._claims.size > 0; }
+
+	// Which run this is: 1 for the first, one more for each resume. A carrier
+	// that waits on a run compares it afterwards to learn whether a resume
+	// replaced the run it waited for.
+	// Transient like the claim: a rehydrated record has no waiter to answer.
+	private _run = 1;
+	get run(): number { return this._run; }
+
+	// The outcome of the run the latest resume replaced, kept for a carrier that
+	// was waiting on it when the resume began. One slot: a second resume during
+	// one wait would need the first resumed run to settle inside it.
+	private _superseded?: { run: number; outcome: SettledOutcome };
 
 	// The question this agent ended its turn with, if it declared one. Part of the
 	// outcome like _result, and set alongside it at the terminal transition.
@@ -344,13 +379,15 @@ export class SubagentState {
 	 * A carrier has committed to delivering this outcome, so nothing else should
 	 * announce it. Unlike every other transition here, this one is revocable.
 	 */
-	claim(): void {
-		this._claimed = true;
+	claim(): CarrierClaim {
+		const claim: CarrierClaim = { release: () => { this._claims.delete(claim); } };
+		this._claims.add(claim);
+		return claim;
 	}
 
-	/** The carrier abandoned its commitment; announcing is owed again. */
-	release(): void {
-		this._claimed = false;
+	/** Drop every carrier's commitment; announcing is owed again. */
+	releaseClaims(): void {
+		this._claims.clear();
 	}
 
 	/** Transition to stopped state. Always valid — no guard. */
@@ -377,8 +414,13 @@ export class SubagentState {
 	 * for the resume and will deliver its outcome, not to the run being reset.
 	 * Clearing it here would drop the claim before the caller could observe it,
 	 * since this runs synchronously before resume() returns.
+	 *
+	 * The outgoing run's outcome is retained first, so a carrier that was waiting
+	 * on that run can still deliver what it ended with (see supersededOutcome).
 	 */
 	resetForResume(startedAt: number): void {
+		this._superseded = { run: this._run, outcome: this.currentOutcome() };
+		this._run++;
 		this._status = "running";
 		this._startedAt = startedAt;
 		this._completedAt = undefined;
@@ -390,5 +432,26 @@ export class SubagentState {
 		this._pendingQuestion = undefined;
 		// The updates belong to the run that produced them, and this starts another.
 		this._runUpdates.length = 0;
+	}
+
+	/**
+	 * What run `run` ended with, once a resume has replaced it; undefined for the
+	 * current run, and for any run before the most recently replaced one.
+	 */
+	supersededOutcome(run: number): SettledOutcome | undefined {
+		return this._superseded?.run === run ? this._superseded.outcome : undefined;
+	}
+
+	private currentOutcome(): SettledOutcome {
+		return {
+			status: this._status,
+			result: this._result,
+			error: this._error,
+			startedAt: this._startedAt,
+			completedAt: this._completedAt,
+			pendingQuestion: this._pendingQuestion,
+			workspaceNotice: this._workspaceNotice,
+			runUpdates: this.runUpdates,
+		};
 	}
 }

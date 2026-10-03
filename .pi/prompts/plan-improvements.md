@@ -52,14 +52,14 @@ A declared direction for Phase N most often lives **not** in `architecture.md` b
 Read that history file's Findings before deep-tracing.
 If it (or `architecture.md`) already declares a direction, treat it as a hypothesis, not a commitment — but put the declared candidate in front of the user in your **first** `ask_user`, up front, not a follow-up: a declared candidate surfaced late forces a second round-trip after the composition is already drafted.
 When no explicit candidate line exists, the history file still carries **implicit candidates**: a ⚠️ metric miss recorded in its health-metrics table, and any "deferred" remark inside a step's Landed notes — treat both as declared-candidate carriers with the same first-`ask_user` treatment.
-Every ⚠️ metric miss in the prior history file gets an explicit disposition in the new roadmap — re-target it, accept it with recorded rationale, or supersede it — never a silent drop (Phase 21 planning silently dropped one; this rule closes that gap).
+Every ⚠️ metric miss in the prior history file gets an explicit disposition in the new roadmap — re-target it, accept it with recorded rationale, or supersede it — never a silent drop.
 A phase triggered mid-lifecycle carries its candidate in a **third** location: when an operator decides during an issue's planning that a phase should open before that issue's implementation, the session records the candidate cause under a `#### Phase handoff` heading in the issue retro.
-Sweep for it — `grep -rn -e '#### Phase handoff' -e 'phase opens before implementation' packages/$1/docs/retro/` (the second pattern catches pre-convention notes) — and give any hit the same first-`ask_user` treatment (Phase 22's declared candidate lived only in an issue retro's ad-hoc sequencing note and surfaced by luck).
+Sweep for it — `grep -rn -e '#### Phase handoff' -e 'phase opens before implementation' packages/$1/docs/retro/` (the second pattern catches pre-convention notes) — and give any hit the same first-`ask_user` treatment.
 Let the discovery findings decide.
 
 Before touching any tool, write down a **cause hypothesis**: the first-principles structural problem you expect the next phase to dissolve (structural fusion, a coupling/boundary flaw, a dead subsystem), read against the architecture doc's first-principles section.
 The later steps corroborate, refine, or refute it — they do not replace it.
-When discovery refutes the hypothesis because the doc prose that spawned it is stale — it describes a state a completed phase already changed — fix or flag that prose in the roadmap commit, mirroring Step 2's drift rule; leaving it plants the same wrong hypothesis for the next planner (Phase 22's initial hypothesis came from a first-principles sentence Phase 18 had already resolved).
+When discovery refutes the hypothesis because the doc prose that spawned it is stale — it describes a state a completed phase already changed — fix or flag that prose in the roadmap commit, mirroring Step 2's drift rule; leaving it plants the same wrong hypothesis for the next planner.
 A cause-level finding must trace to a named target concept in the architecture doc's first-principles section; when no such section exists, writing one — naming the organizing concept and recording resolved design directions — is itself a phase deliverable.
 
 ### Step 2: Sweep open issues
@@ -71,10 +71,10 @@ gh issue list --label "pkg:$1" --state open
 ```
 
 Cross-check each open issue against the architecture doc's claims about which issues remain open, and note any that are parked candidates for this phase or already-filed work you must not re-plan.
-An open issue that already names a cause-level finding is a **pre-discovered candidate** — adopt it as a phase step under its existing number rather than re-deriving or re-filing it (Phase 21's two strongest steps were adopted this way).
+An open issue that already names a cause-level finding is a **pre-discovered candidate** — adopt it as a phase step under its existing number rather than re-deriving or re-filing it.
 Read each labeled issue's body before counting it in scope: a package label is sometimes contextual (the body targets another package), and a mislabeled issue must not pull cross-package work into the phase.
 When the sweep exposes doc/tracker drift in prose outside the roadmap sections (e.g. a stale "remaining open issues" claim), fix it in the roadmap commit rather than leaving it for the next reader.
-Sweep open pull requests too: `gh pr list --state open`, reading any whose title or changed files touch `packages/$1/` — this repo reimplements adopted external PRs rather than merging them, so an open PR is a pre-discovered candidate or a step's close target, never noise (three Phase 22 steps cite open PRs that surfaced only because issue bodies happened to mention them).
+Sweep open pull requests too: `gh pr list --state open`, reading any whose title or changed files touch `packages/$1/` — this repo reimplements adopted external PRs rather than merging them, so an open PR is a pre-discovered candidate or a step's close target, never noise.
 Record each relevant PR's disposition alongside the issue it serves.
 Track repeat deferrals: an issue swept as out-of-scope across multiple consecutive phases (check the prior phase retros/roadmaps) gets an explicit decision this phase — schedule it, or recommend closing it as not-planned — never a silent re-defer.
 State the ordinal in the disposition itself — each deferral bullet carries its consecutive-sweep count (`2nd consecutive sweep`) so the next phase reads the count instead of re-deriving it from prior archives.
@@ -82,7 +82,7 @@ Surface each repeat-deferral as an explicit `ask_user` decision (schedule / defe
 Record the sweep's verdicts under the `#### Open-issue sweep dispositions` heading the Output section prescribes — mid-phase filing sites and `/finish-phase` both append to and grep that exact heading.
 
 Sweep recorded deferred tidyings too: `grep -r -A 5 '#### Deferred tidyings' packages/$1/docs/retro/`.
-Each is a finding a `tidy-first-assessor` judged real but out of scope for the change it was dispatched over — triage like any other candidate, or say why it stays deferred (Refs #787).
+Each is a finding a `tidy-first-assessor` judged real but out of scope for the change it was dispatched over — triage like any other candidate, or say why it stays deferred.
 
 ### Step 3: Run fallow for corroboration and baseline
 
@@ -113,7 +113,7 @@ Do not accept the architecture doc's self-justification for a smell at face valu
 When the analysis touches handler wiring or shared interfaces, load the `design-review` skill before writing the plan.
 
 **Do not grade the tests by `grep`.**
-Counting `as unknown as` / `vi.mock` occurrences is not reading them — a documented failure mode of this prompt (an 880-line test body reads as "low cast count" and sails through).
+Counting `as unknown as` / `vi.mock` occurrences is not reading them.
 The micro lens (test-design quality as a first-class artifact — Category G — plus method-level SOLID, naming, stepdown, and comment quality) is expensive in context, so dispatch it to a subagent:
 
 - Dispatch the `craftsmanship-scout` subagent via the `subagent` tool: `subagent_type: "craftsmanship-scout"`, `description: "Craftsmanship scout for <PKG>"`, and a `prompt` naming the package, the largest test files (from the `fallow health` large-functions list; when that list is empty — common on a mature package — fall back to the largest test files by `wc -l`), and the churn hotspots.
@@ -139,7 +139,7 @@ The `#src/*` / `#test/*` import aliases keep moves mechanical (a move rewrites o
 A domain directory may expose a lean `index.ts` barrel as its cross-domain API, but only at genuine seams — this repo treats barrel re-export sprawl as a smell and fallow flags any export with no importer.
 
 Reorg scope is preference-sensitive (churn vs. coherence), so when the opportunity is larger than the files the phase already touches, use `ask_user` to decide how much to fold in.
-When the full reorg exceeds the current phase, record a **forward-looking directory sketch** (the target domain directories + these principles) in the architecture doc and seed only the first domain now — see the pi-permission-system Phase 6 "Directory organization" section for the pattern.
+When the full reorg exceeds the current phase, record a **forward-looking directory sketch** (the target domain directories + these principles) in the architecture doc and seed only the first domain now.
 
 ### Step 7: Apply the smell taxonomy
 
@@ -221,6 +221,7 @@ The section should include:
    - **Impact / Risk / Priority** — the per-step scores (`Priority = Impact × (6 − Risk)`), published on the step so the ranking is auditable in the committed roadmap and at `/plan-issue` time, not left in the session transcript.
    - A `Release:` tag on its own line — `Release: independent` or `Release: batch "<batch-name>"` (see the `improvement-discovery` skill's Output format).
 3. Step dependency diagram (Mermaid flowchart), laid out by dependency rather than by sequence, with `S<issue>` node IDs and the bare issue number in the label (`S857["✅ #857<br/>Workspace-backed resume"]`) — that bare number is what `/tdd-plan`'s and `/build-plan`'s `✅`-mark verification counts.
+   Draw a hard dependency as `-->` and a soft one as `-.soft.->`, and no other edge (the `improvement-discovery` skill's Output format defines both).
 4. Named parallel tracks, naming their members as `[#N]`.
 5. A `Release batches` subsection (after the parallel tracks) naming each batch, its member steps as `[#N]` in dependency order (last listed = tail), and the independently releasable steps.
    This is the deterministic source `/plan-issue` reads to recommend a release decision — keep it grep-able, not prose.
@@ -233,8 +234,8 @@ Then check the roadmap you just wrote against its own published inputs:
 ./scripts/roadmap-check.mjs $1
 ```
 
-Resolve every **error** before going further — each one reads a strictly-formatted field, so it is a defect in what you wrote rather than a judgement call: a `Priority` that does not follow from its own `Impact` and `Risk`, a missing or unrecognized `Release:` tag, a batch name with no bullet, a step missing from the diagram, or a dependency cycle.
-Read the **warnings** and fix the ones that are wrong: a step named in no track or no release batch is usually an omission, and a `**Hard dependency:**` bullet disagreeing with the diagram means one of the two is stale.
+Resolve every **error** before going further — each one reads a strictly-formatted field, so it is a defect in what you wrote rather than a judgement call: a `Priority` that does not follow from its own `Impact` and `Risk`, a missing or unrecognized `Release:` tag, a batch name with no bullet, a step missing from the diagram, an edge spelled outside the two kinds, or a dependency cycle.
+Read the **warnings** and fix the ones that are wrong: a step named in no track or no release batch is usually an omission, and a `**Hard dependency:**` or `**Soft dependency:**` bullet disagreeing with the diagram means one of the two is stale.
 
 After writing the plan, present a summary to the user and ask whether to commit.
 If confirmed, commit with:
@@ -282,5 +283,4 @@ Before stopping, persist planning observations for cross-session continuity — 
 4. Commit with `docs($1): add Phase N planning retro notes` and push.
 
 Wrap code identifiers, filenames, and underscore-bearing text in backticks.
-Append with the `Edit`/`Write` tools, not a shell heredoc.
 Then stop.

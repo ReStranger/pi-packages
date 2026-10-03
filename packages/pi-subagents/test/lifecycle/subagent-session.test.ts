@@ -47,6 +47,8 @@ function createSession(finalText: string) {
       contextUsage: { percent: 42 },
     })),
     getToolDefinition: vi.fn((_name: string): unknown => undefined),
+    model: undefined as { provider: string; id: string } | undefined,
+    thinkingLevel: "off",
   };
   return { session, listeners, calls };
 }
@@ -191,6 +193,32 @@ describe("SubagentSession — accessors", () => {
     const { session } = createSession("X");
     const { sub } = makeSubagentSession(session, { outputFile: undefined });
     expect(sub.outputFile).toBeUndefined();
+  });
+
+  describe("model and thinking level", () => {
+    it("reports the wrapped session's current model", () => {
+      const { session } = createSession("X");
+      const { sub } = makeSubagentSession(session);
+      const sonnet = { provider: "anthropic", id: "claude-sonnet-5" };
+      session.model = sonnet;
+      expect(sub.model).toBe(sonnet);
+    });
+
+    it("follows a model the wrapped session switches to", () => {
+      const { session } = createSession("X");
+      const { sub } = makeSubagentSession(session);
+      session.model = { provider: "anthropic", id: "claude-sonnet-5" };
+      const fallback = { provider: "openai", id: "gpt-6" };
+      session.model = fallback;
+      expect(sub.model).toBe(fallback);
+    });
+
+    it("reports the wrapped session's current thinking level", () => {
+      const { session } = createSession("X");
+      const { sub } = makeSubagentSession(session);
+      session.thinkingLevel = "high";
+      expect(sub.thinkingLevel).toBe("high");
+    });
   });
 });
 

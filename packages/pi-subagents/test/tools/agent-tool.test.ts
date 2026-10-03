@@ -1,11 +1,14 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
+import { AgentTypeRegistry } from "#src/config/agent-types";
 import { AgentTool } from "#src/tools/agent-tool";
 import {
 	createToolDeps,
 	createToolDepsWithDisabledBuiltInAgents,
 	mockResumeRecord,
 	mockResumeRefusal,
+	mockResumeStart,
+	mockResumeStartRefusal,
 } from "#test/helpers/make-deps";
 import { createTestSubagent } from "#test/helpers/make-subagent";
 
@@ -351,6 +354,102 @@ describe("AgentTool — resume path", () => {
 				resume: "agent-1",
 			});
 			expect(result.content[0].text).toContain("Agent ID: agent-1");
+		});
+	});
+
+	describe("background resume", () => {
+		const backgroundResume = {
+			prompt: "continue",
+			description: "answer",
+			subagent_type: "general-purpose",
+			resume: "agent-1",
+			run_in_background: true,
+		};
+
+		it("starts the resume without waiting for it, unclaimed and with no signal", async () => {
+			const deps = createToolDeps();
+			mockResumeStart(deps);
+
+			await execute(deps, backgroundResume);
+
+			expect(deps.manager.startResume).toHaveBeenCalledWith("agent-1", "continue", {});
+			expect(deps.manager.resume).not.toHaveBeenCalled();
+		});
+
+		it("returns the background launch message for the resumed agent", async () => {
+			const deps = createToolDeps();
+			mockResumeStart(deps);
+
+			const result = await execute(deps, backgroundResume);
+
+			expect(result.content[0].text).toBe(
+				"Agent resumed in background.\n" +
+					"Agent ID: agent-1\n" +
+					"Type: Agent\n" +
+					"Description: answer\n" +
+					"\nYou will be notified when this agent completes.\n" +
+					"Use get_subagent_result to retrieve full results, or steer_subagent to send it messages.\n" +
+					"Do not duplicate this agent's work.",
+			);
+			expect(result.details).toMatchObject({ status: "background", agentId: "agent-1" });
+		});
+
+		it("leaves the resumed outcome uncollected, for the completion notice to deliver", async () => {
+			const deps = createToolDeps();
+			const record = mockResumeStart(deps);
+
+			await execute(deps, backgroundResume);
+
+			expect(record.consumed).toBe(false);
+		});
+
+		it.for(["unknown-agent", "still-running"] as const)(
+			"words a %s refusal the way the foreground resume does",
+			async (reason) => {
+				const foreground = createToolDeps();
+				mockResumeRefusal(foreground, reason);
+				const background = createToolDeps();
+				mockResumeStartRefusal(background, reason);
+
+				const expected = await execute(foreground, { ...backgroundResume, run_in_background: undefined });
+				const result = await execute(background, backgroundResume);
+
+				expect(result.content[0].text).toBe(expected.content[0].text);
+			},
+		);
+
+		it("resumes in the foreground when the call says run_in_background: false", async () => {
+			const deps = createToolDeps();
+
+			await execute(deps, { ...backgroundResume, run_in_background: false });
+
+			expect(deps.manager.resume).toHaveBeenCalledOnce();
+			expect(deps.manager.startResume).not.toHaveBeenCalled();
+		});
+
+		it("ignores an agent file's run_in_background default, resuming in the foreground", async () => {
+			const deps = createToolDeps({
+				registry: new AgentTypeRegistry(
+					() =>
+						new Map([
+							[
+								"watcher",
+								{
+									name: "watcher",
+									description: "background by default",
+									promptMode: "append" as const,
+									systemPrompt: "",
+									runInBackground: true,
+								},
+							],
+						]),
+				),
+			});
+
+			await execute(deps, { ...backgroundResume, subagent_type: "watcher", run_in_background: undefined });
+
+			expect(deps.manager.resume).toHaveBeenCalledOnce();
+			expect(deps.manager.startResume).not.toHaveBeenCalled();
 		});
 	});
 });

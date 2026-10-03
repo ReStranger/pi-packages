@@ -11,14 +11,17 @@
  */
 import { describe, expect, it } from "vitest";
 import { collectCommands } from "#src/access-intent/bash/command-enumeration";
+import { WordReader } from "#src/access-intent/bash/node-text";
 import { getParser } from "#src/access-intent/bash/parser";
 import { BashProgram } from "#src/access-intent/bash/program";
+import { ShellVariables } from "#src/access-intent/bash/shell-variable-expansion";
 import { resolveBashCommandCheck } from "#src/handlers/gates/bash-command";
 import { pathFlavorForPlatform } from "#src/path/path-flavor";
 import { PathNormalizer } from "#src/path/path-normalizer";
 import type { ScopedPermissionResolver } from "#src/policy/permission-resolver";
 import type { PermissionState } from "#src/types";
 
+import { bashCommandOf } from "#test/helpers/gate-fixtures";
 import { makeCheckResult } from "#test/helpers/handler-fixtures";
 
 /** Decision strength ordering: deny (2) > ask (1) > allow (0). */
@@ -37,10 +40,7 @@ function makeKeyedResolver(
 ): ScopedPermissionResolver {
   return {
     resolve: (intent) => {
-      const command =
-        intent.kind === "tool"
-          ? ((intent.input as { command?: string }).command ?? "")
-          : "";
+      const command = bashCommandOf(intent) ?? "";
       const rule = rules.find((r) => command.includes(r.match));
       const state: PermissionState = rule?.state ?? "allow";
       return makeCheckResult({ state, source: "bash", command });
@@ -62,6 +62,23 @@ async function decide(
     undefined,
     resolver,
   ).state;
+}
+
+/**
+ * Whether `unit`'s whitespace-separated words appear in `command`, in order:
+ * the unit is the command with zero or more whole spans left out.
+ *
+ * Each word is found as a substring rather than as one of the command's own
+ * words, because an operator can abut a word (`rm $f;`).
+ */
+function isWordSubsequence(unit: string, command: string): boolean {
+  let next = 0;
+  for (const word of unit.split(/\s+/)) {
+    const found = command.indexOf(word, next);
+    if (found === -1) return false;
+    next = found + word.length;
+  }
+  return true;
 }
 
 describe("bash command gate — metamorphic totality", () => {
@@ -164,10 +181,7 @@ describe("bash command gate — a redirect's position does not weaken", () => {
   ): ScopedPermissionResolver {
     return {
       resolve: (intent) => {
-        const command =
-          intent.kind === "tool"
-            ? ((intent.input as { command?: string }).command ?? "")
-            : "";
+        const command = bashCommandOf(intent) ?? "";
         return makeCheckResult({
           state: command.startsWith(prefix) ? state : "allow",
           source: "bash",
@@ -204,6 +218,26 @@ describe("bash command gate — a redirect's position does not weaken", () => {
     {
       label: "after the head word of a list's last command",
       place: (h, r) => `cd a && ${h} 2>/dev/null ${r}`,
+    },
+    {
+      label: "as a heredoc after the head word",
+      place: (h, r) => `${h} <<EOF ${r}\nbody\nEOF`,
+    },
+    {
+      label: "as a heredoc after the head word of a list's last command",
+      place: (h, r) => `cd a && ${h} <<EOF ${r}\nbody\nEOF`,
+    },
+    {
+      label: "as a heredoc piped into the command",
+      place: (h, r) => `cat <<EOF | ${h} ${r}\nbody\nEOF`,
+    },
+    {
+      label: "as a heredoc joined to the command by &&",
+      place: (h, r) => `cat <<EOF && ${h} ${r}\nbody\nEOF`,
+    },
+    {
+      label: "as a heredoc writing a file before the command",
+      place: (h, r) => `cat <<EOF > /tmp/o && ${h} ${r}\nbody\nEOF`,
     },
   ];
 
@@ -335,6 +369,29 @@ describe("bash command gate — a parse it could not resolve fails closed", () =
       command:
         "git add -A . && git commit -F - <<'MSG' 2>&1 | rm -rf /tmp/x\nmsg\nMSG",
     },
+    // Valid bash whose heredoc tail the grammar cannot parse at all: the
+    // salvage recovers the command after the heredoc from the line's
+    // heredoc-free spelling.
+    {
+      label: "a heredoc followed by `;`",
+      command: "cat <<EOF ; rm -rf /tmp/x\nb\nEOF",
+    },
+    {
+      label: "a heredoc followed by `&`",
+      command: "cat <<EOF & rm -rf /tmp/x\nb\nEOF",
+    },
+    {
+      label: "a heredoc followed by words and a redirect",
+      command: "cat <<EOF arg > /tmp/o\nb\nEOF",
+    },
+    {
+      label: "a descriptor the grammar lexed into the delimiter",
+      command: "cat 0<<EOF | rm -rf /tmp/x\nb\nEOF",
+    },
+    {
+      label: "a heredoc tail inside a compound statement",
+      command: "if true; then cat <<EOF ; rm -rf /tmp/x\nb\nEOF\nfi",
+    },
     // Malformed input, which the shell itself refuses to run. Covered because
     // the clause is about the parse, not about what bash would accept.
     { label: "an unbalanced quote", command: "echo 'unbalanced" },
@@ -419,7 +476,10 @@ describe("bash command gate — a parse it could not resolve fails closed", () =
       const tree = parser.parse(command);
       if (!tree) throw new Error("parse returned null");
       try {
-        return collectCommands(tree.rootNode);
+        return collectCommands(
+          tree.rootNode,
+          new WordReader(ShellVariables.UNREBOUND),
+        );
       } finally {
         tree.delete();
       }
@@ -439,14 +499,18 @@ describe("bash command gate — a parse it could not resolve fails closed", () =
     );
 
     it.each([...unresolved.map(({ command }) => command), ...resolved])(
-      "emits no unit whose text the command does not contain, for %s",
+      "emits no unit whose words are not the command's words, in order, for %s",
       async (command) => {
-        // Anti-invention: every unit's text is sliced from a parse of the
-        // command's own source, salvaged or not. Recovery's invented structure
-        // is refused a step earlier, when its re-parse fails.
+        // Anti-invention: every unit is built from a parse of the command's own
+        // source, salvaged or not, with at most whole spans left out: a
+        // redirect or heredoc between a command's words is not part of its
+        // unit. So its words are the command's words, in order. Recovery's
+        // invented structure is refused a step earlier, when its re-parse fails.
         const units = (await BashProgram.parse(command, normalizer)).commands();
 
-        expect(units.filter(({ text }) => !command.includes(text))).toEqual([]);
+        expect(
+          units.filter(({ text }) => !isWordSubsequence(text, command)),
+        ).toEqual([]);
       },
     );
 

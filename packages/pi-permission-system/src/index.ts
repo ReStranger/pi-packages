@@ -172,6 +172,7 @@ export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
       doublePressToConfirm: configStore.current().doublePressToConfirm,
       budget: resolveRenderBudget(configStore.current()),
       dialogKeys: resolveDialogKeys(configStore.current()).keys,
+      promptNotifications: configStore.current().promptNotifications ?? [],
     }),
     requestPermissionDecision,
     forwardingDir: paths.forwardingDir,
@@ -361,6 +362,7 @@ export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
     resolver,
     toolRegistry,
     logger,
+    subagentDetection,
   );
 
   const gateRunner = new GateRunner(

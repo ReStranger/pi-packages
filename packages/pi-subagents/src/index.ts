@@ -180,6 +180,9 @@ export default function (pi: ExtensionAPI) {
     // the extension-exclusion policy reaches it in. It is a resolver rather
     // than a value because only the assembler knows the child's provider.
     resolvePromptInheritance: (provider) => settings.promptInheritanceFor(provider),
+    // Read per child rather than once: an MCP server connects in the
+    // background, so its tools register after this extension loads.
+    listParentToolNames: () => pi.getAllTools().map((tool) => tool.name),
   };
 
   // ConcurrencyLimiter: schedules background run thunks FIFO against the limit.

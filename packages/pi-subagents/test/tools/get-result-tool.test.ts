@@ -7,6 +7,7 @@ import {
 } from "#src/tools/get-result-tool";
 import type { Subagent } from "#src/types";
 import type { Theme } from "#src/ui/display";
+import { makeModel } from "#test/helpers/make-model";
 import { createTestSubagent, makeStubExecution } from "#test/helpers/make-subagent";
 import { createMockSession, createSubagentSessionStub, toSubagentSession } from "#test/helpers/mock-session";
 import { STUB_CTX } from "#test/helpers/stub-ctx";
@@ -87,6 +88,61 @@ describe("GetResultTool — carrier claim", () => {
 		expect(record.consumed).toBe(false);
 	});
 
+	it("leaves another carrier's claim in place when the parent turn is interrupted mid-wait", async () => {
+		const sessionStub = createSubagentSessionStub();
+		sessionStub.runTurnLoop.mockReturnValue(new Promise<never>(() => {}));
+		const record = createTestSubagent({
+			status: "running",
+			completedAt: undefined,
+			execution: makeStubExecution({
+				createSubagentSession: async () => toSubagentSession(sessionStub),
+			}),
+		});
+		record.start();
+		record.claim();
+		const controller = new AbortController();
+
+		const resultPromise = execute(
+			makeManager(new Map([["agent-1", record]])),
+			{ agent_id: "agent-1", wait: true },
+			controller.signal,
+		);
+		controller.abort();
+		await resultPromise;
+
+		// Only this call's claim was abandoned; the other carrier still delivers.
+		expect(record.claimed).toBe(true);
+	});
+
+	it("leaves a claimed resume's claim in place when the wait wakes after the resume started", async () => {
+		const sessionStub = createSubagentSessionStub();
+		sessionStub.runTurnLoop.mockResolvedValue({ responseText: "first", aborted: false, steered: false });
+		const resumed = Promise.withResolvers<string>();
+		sessionStub.resumeTurnLoop.mockReturnValue(resumed.promise);
+		const record = createTestSubagent({
+			status: "running",
+			completedAt: undefined,
+			execution: makeStubExecution({
+				createSubagentSession: async () => toSubagentSession(sessionStub),
+				// A consumer that resumes the moment the run settles, before the
+				// waiter's continuation runs, as a subagents:completed handler can.
+				observer: {
+					onRunFinished: (agent) => {
+						agent.claim();
+						void agent.resume("continue");
+					},
+				},
+			}),
+		});
+		record.start();
+
+		await execute(makeManager(new Map([["agent-1", record]])), { agent_id: "agent-1", wait: true });
+
+		expect(record.claimed).toBe(true);
+		resumed.resolve("second");
+		await record.promise;
+	});
+
 	it("leaves another carrier's claim untouched when wait is not requested", async () => {
 		const record = createTestSubagent({ status: "running", completedAt: undefined });
 		record.claim();
@@ -94,6 +150,86 @@ describe("GetResultTool — carrier claim", () => {
 		await execute(makeManager(new Map([["agent-1", record]])), { agent_id: "agent-1" });
 
 		expect(record.claimed).toBe(true);
+	});
+});
+
+describe("GetResultTool — a wait a resume superseded", () => {
+	/**
+	 * An agent whose first run asks a question and ends with `first result`, and
+	 * a consumer that resumes it the moment that run settles, before the waiter's
+	 * continuation runs, as a subagents:completed handler can.
+	 */
+	function supersededAgent() {
+		const sessionStub = createSubagentSessionStub();
+		let ask: ((question: string) => void) | undefined;
+		sessionStub.runTurnLoop.mockImplementation(() => {
+			ask?.("Which config?");
+			return Promise.resolve({ responseText: "first result", aborted: false, steered: false });
+		});
+		const resumed = Promise.withResolvers<string>();
+		sessionStub.resumeTurnLoop.mockReturnValue(resumed.promise);
+		const record = createTestSubagent({
+			status: "running",
+			completedAt: undefined,
+			execution: makeStubExecution({
+				createSubagentSession: async (params) => {
+					ask = params.askParent;
+					return toSubagentSession(sessionStub);
+				},
+				observer: {
+					onRunFinished: (agent) => {
+						agent.claim();
+						void agent.resume("The project one.");
+					},
+				},
+			}),
+		});
+		record.start();
+		return { record, finishResume: () => resumed.resolve("second result") };
+	}
+
+	it("reports the run it waited for, and that the agent is running again", async () => {
+		const { record, finishResume } = supersededAgent();
+
+		const result = await execute(makeManager(new Map([["agent-1", record]])), { agent_id: "agent-1", wait: true });
+
+		const text = result.content[0].text;
+		// Duration and the agent id vary per run, so the stable lines are checked.
+		expect(text).toContain("Status: completed |");
+		expect(text).toContain("\n\nfirst result\n\n");
+		expect(text).toContain("This agent was resumed before this wait returned and is running again");
+		finishResume();
+		await record.promise;
+	});
+
+	it("drops the question the resume is already answering", async () => {
+		const { record, finishResume } = supersededAgent();
+
+		const result = await execute(makeManager(new Map([["agent-1", record]])), { agent_id: "agent-1", wait: true });
+
+		expect(result.content[0].text).not.toContain("Which config?");
+		finishResume();
+		await record.promise;
+	});
+
+	it("leaves the resumed run's outcome uncollected", async () => {
+		const { record, finishResume } = supersededAgent();
+
+		await execute(makeManager(new Map([["agent-1", record]])), { agent_id: "agent-1", wait: true });
+
+		expect(record.consumed).toBe(false);
+		finishResume();
+		await record.promise;
+	});
+
+	it("summarises the run it waited for in the TUI details", async () => {
+		const { record, finishResume } = supersededAgent();
+
+		const result = await execute(makeManager(new Map([["agent-1", record]])), { agent_id: "agent-1", wait: true });
+
+		expect([result.details?.status, result.details?.preview]).toEqual(["completed", "first result"]);
+		finishResume();
+		await record.promise;
 	});
 });
 
@@ -122,6 +258,23 @@ describe("GetResultTool", () => {
 		expect(text).toContain("Agent: agent-1");
 		expect(text).toContain("completed");
 		expect(text).toContain("All done.");
+	});
+
+	describe("model", () => {
+		it("names the model the agent ran in the report and the TUI details", async () => {
+			const record = createTestSubagent({
+				execution: makeStubExecution({ model: makeModel({ provider: "openai", id: "gpt-5" }) }),
+			});
+			const result = await execute(makeManager(new Map([["agent-1", record]])), { agent_id: "agent-1" });
+			expect(result.content[0].text).toContain("\nModel: openai/gpt-5\n");
+			expect(result.details?.modelName).toBe("openai/gpt-5");
+		});
+
+		it("names no model while the agent's model is unknown", async () => {
+			const result = await execute(makeManager(new Map([["agent-1", createTestSubagent()]])), { agent_id: "agent-1" });
+			expect(result.content[0].text).not.toContain("Model:");
+			expect(result.details?.modelName).toBeUndefined();
+		});
 	});
 
 	it("reports the updates the agent sent during the run", async () => {

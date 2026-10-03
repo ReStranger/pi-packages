@@ -37,6 +37,7 @@ function makeStep(overrides = {}) {
     scores: { impact: 2, risk: 2, priority: 8 },
     releaseTags: ["independent"],
     hardDependency: null,
+    softDependency: null,
     ...overrides,
   };
 }
@@ -276,7 +277,13 @@ describe("validateRoadmap", () => {
 
     it("ignores soft edges, which state a preference rather than a constraint", () => {
       const roadmap = makeRoadmap({
-        steps: [makeStep({ issue: 1 }), dependent(2, [1])],
+        steps: [
+          makeStep({
+            issue: 1,
+            softDependency: { present: true, dependsOn: [2] },
+          }),
+          dependent(2, [1]),
+        ],
         edges: [
           { from: 1, to: 2, kind: "hard" },
           { from: 2, to: 1, kind: "soft" },
@@ -365,6 +372,149 @@ describe("validateRoadmap", () => {
       });
       expect(messages(roadmap)).toEqual([
         "warning: #889 has a solid edge from #724 that its **Hard dependency:** bullet omits",
+      ]);
+    });
+  });
+
+  describe("soft dependency claims against the diagram", () => {
+    it("accepts a claim matching the diagram's soft edges", () => {
+      const roadmap = makeRoadmap({
+        steps: [
+          makeStep({ issue: 881 }),
+          makeStep({
+            issue: 882,
+            softDependency: { present: true, dependsOn: [881] },
+          }),
+        ],
+        nodeIssues: [881, 882],
+        edges: [{ from: 881, to: 882, kind: "soft" }],
+      });
+      expect(messages(roadmap)).toEqual([]);
+    });
+
+    it("reports a soft edge the step's bullet omits", () => {
+      const roadmap = makeRoadmap({
+        steps: [
+          makeStep({ issue: 609 }),
+          makeStep({ issue: 880 }),
+          makeStep({
+            issue: 881,
+            softDependency: { present: true, dependsOn: [609] },
+          }),
+        ],
+        nodeIssues: [609, 880, 881],
+        edges: [
+          { from: 609, to: 881, kind: "soft" },
+          { from: 880, to: 881, kind: "soft" },
+        ],
+      });
+      expect(messages(roadmap)).toEqual([
+        "warning: #881 has a soft edge from #880 that its **Soft dependency:** bullet omits",
+      ]);
+    });
+
+    it("reports a soft claim the diagram does not draw", () => {
+      const roadmap = makeRoadmap({
+        steps: [
+          makeStep({ issue: 881 }),
+          makeStep({
+            issue: 882,
+            softDependency: { present: true, dependsOn: [881] },
+          }),
+        ],
+        nodeIssues: [881, 882],
+        edges: [],
+      });
+      expect(messages(roadmap)).toEqual([
+        "warning: #882 declares a soft dependency on #881 with no soft edge in the diagram",
+      ]);
+    });
+
+    it("reports a soft edge into a step that declares no soft dependency bullet", () => {
+      const roadmap = makeRoadmap({
+        steps: [makeStep({ issue: 945 }), makeStep({ issue: 863 })],
+        nodeIssues: [945, 863],
+        edges: [{ from: 945, to: 863, kind: "soft" }],
+      });
+      expect(messages(roadmap)).toEqual([
+        "warning: #863 has a soft edge from #945 but declares no **Soft dependency:** bullet",
+      ]);
+    });
+
+    it("does not accept a hard edge as backing for a soft claim", () => {
+      const roadmap = makeRoadmap({
+        steps: [
+          makeStep({ issue: 881 }),
+          makeStep({
+            issue: 882,
+            softDependency: { present: true, dependsOn: [881] },
+          }),
+        ],
+        nodeIssues: [881, 882],
+        edges: [{ from: 881, to: 882, kind: "hard" }],
+      });
+      expect(messages(roadmap)).toEqual([
+        "warning: #882 has a solid edge from #881 but declares no **Hard dependency:** bullet",
+        "warning: #882 declares a soft dependency on #881 with no soft edge in the diagram",
+      ]);
+    });
+  });
+
+  describe("edge spellings", () => {
+    it("reports a bare dashed edge, naming its spelling", () => {
+      const roadmap = makeRoadmap({
+        steps: [makeStep({ issue: 945 }), makeStep({ issue: 863 })],
+        edges: [{ from: 945, to: 863, kind: "unrecognized", spelling: "-.->" }],
+      });
+      expect(messages(roadmap)).toEqual([
+        "error: diagram edge #945 -.-> #863 is neither hard (`-->`) nor soft (`-.soft.->`)",
+      ]);
+    });
+
+    it("reports an unrecognized edge that is not dashed", () => {
+      const roadmap = makeRoadmap({
+        steps: [makeStep({ issue: 1 }), makeStep({ issue: 2 })],
+        edges: [{ from: 1, to: 2, kind: "unrecognized", spelling: "==>" }],
+      });
+      expect(messages(roadmap)).toEqual([
+        "error: diagram edge #1 ==> #2 is neither hard (`-->`) nor soft (`-.soft.->`)",
+      ]);
+    });
+
+    it("accepts the two edge kinds of the vocabulary", () => {
+      const roadmap = makeRoadmap({
+        steps: [
+          makeStep({ issue: 1 }),
+          makeStep({
+            issue: 2,
+            hardDependency: { present: true, dependsOn: [1] },
+            softDependency: { present: true, dependsOn: [1] },
+          }),
+        ],
+        edges: [
+          { from: 1, to: 2, kind: "hard" },
+          { from: 1, to: 2, kind: "soft" },
+        ],
+      });
+      expect(messages(roadmap)).toEqual([]);
+    });
+
+    it("keeps an unrecognized back-edge out of cycle detection", () => {
+      const roadmap = makeRoadmap({
+        steps: [
+          makeStep({ issue: 1 }),
+          makeStep({
+            issue: 2,
+            hardDependency: { present: true, dependsOn: [1] },
+          }),
+        ],
+        edges: [
+          { from: 1, to: 2, kind: "hard" },
+          { from: 2, to: 1, kind: "unrecognized", spelling: "-.informs.->" },
+        ],
+      });
+      expect(messages(roadmap)).toEqual([
+        "error: diagram edge #2 -.informs.-> #1 is neither hard (`-->`) nor soft (`-.soft.->`)",
       ]);
     });
   });

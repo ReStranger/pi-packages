@@ -285,6 +285,17 @@ The plan should produce:
    ```
 
    A `[#N]` reference link does not render inside a Mermaid label, so the node uses the bare form while the heading uses the link.
+
+   An edge has exactly two spellings, each backed by a bullet on the step it points into:
+
+   | Edge            | Kind | Asserts                                              | Backed by                         |
+   | --------------- | ---- | ---------------------------------------------------- | --------------------------------- |
+   | `A --> B`       | hard | B cannot land before A                               | B's `**Hard dependency:**` bullet |
+   | `A -.soft.-> B` | soft | land A first if you can; B does not break without it | B's `**Soft dependency:**` bullet |
+
+   The `soft` label renders on the edge, so the diagram needs no legend sentence.
+   A relation that asserts no order (one step's outcome informs another's design) is not drawn; say it in the step's prose or its track.
+   Any other link spelling (bare `-.->`, `-.informs.->`, a `|label|`) is a checker error.
 4. **Tracks** — group steps into named parallel tracks, naming members as `[#N]` (`**Track A — Result delivery:** [#857] → [#878]`).
 5. **Release batches** — make release coordination grep-able, in two artifacts:
 
@@ -309,7 +320,8 @@ The plan should produce:
 6. **A format a checker reads.**
    `./scripts/roadmap-check.mjs <pkg>` validates the published inputs above against each other, so four structural anchors are load-bearing: the `### Steps` subsection steps are taken from, the single ```mermaid fence, `### Parallel tracks`, and `### Release batches`.
    It verifies that `Priority` equals `Impact × (6 − Risk)` rather than taking the published product on trust, that every step carries exactly one recognized `Release:` tag whose batch resolves to a bullet, that steps and diagram nodes correspond, and that the hard-dependency graph is acyclic.
-   It also holds each `**Hard dependency:**` bullet to the diagram's solid edges in both directions — the diagram is the dependency authority and the bullet is the explanation — and reports a step named in no track or no release batch.
+   It also holds each `**Hard dependency:**` bullet to the diagram's `-->` edges and each `**Soft dependency:**` bullet to its `-.soft.->` edges, in both directions — the diagram is the dependency authority and the bullet is the explanation — and reports a step named in no track or no release batch.
+   An edge spelled outside those two is an error.
    Run it before committing a roadmap.
 7. **Open-issue sweep dispositions** — the Step 2 verdicts, under a `#### Open-issue sweep dispositions` heading inside the roadmap's `### Findings (planned YYYY-MM-DD)` section.
    Use that exact spelling: the `roadmap-fit` skill appends a bullet to it whenever an issue is spun off mid-phase, and `/finish-phase` greps it to reconcile phase-born issues before archiving.

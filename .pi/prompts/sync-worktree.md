@@ -1,5 +1,5 @@
 ---
-model: anthropic/claude-sonnet-5
+model: anthropic/claude-sonnet-5-5
 description: Peer-session sync — run pre-push checks and rebase a worktree branch onto main, then hand off to the root session
 ---
 
@@ -20,6 +20,8 @@ Load the `worktrees` and `git-workflow` skills before step 1 — the rebase rule
 1. Run `git branch --show-current`.
 2. If the branch is `main` (or not an `issue-$1-*` branch), stop and report — this is the trunk flow's job; run `/ship $1` from the root instead.
 3. Only proceed on an `issue-$1-<slug>` branch.
+4. Read the retro file's latest stage entry.
+   If it records a reviewer WARN or an operator decision still open, settle it with the operator (`ask_user`) and commit the result here before step 2 — syncing past it only moves the stop to `/ship`.
 
 ## 2. Pre-push checks
 
@@ -44,11 +46,11 @@ The stage note lives in an `exclude-paths` dir, so it triggers no release — bu
    ```
 
    (Equivalently, the root can call `list_session_files({ cwd: "<this worktree path>" })` and pick the newest entry — the `sed` one-liner above is just this peer session capturing its own path inline.) This capture is optional — if the command stalls or fails, record the path as unknown and proceed; the root recovers it via `list_session_files`.
-   Do not re-run the already-green pre-push gates (step 2) on a stall here (Refs #535).
+   Do not re-run the already-green pre-push gates (step 2) on a stall here.
 3. Append a stage entry (anchor the `Edit` on the file's last line — the repeated `### Observations` headers make header-anchored edits ambiguous).
    Do not cite a branch commit SHA in this note — step 4's rebase rewrites every one, leaving a dangling citation on `main`.
-   Name the commit by its subject instead (Refs #814).
-   On a re-run — the branch was already synced and `main` moved — append a dated line to the existing entry rather than a second `## Stage: Sync (worktree)` block (Refs #875).
+   Name the commit by its subject instead.
+   On a re-run — the branch was already synced and `main` moved — append a dated line to the existing entry rather than a second `## Stage: Sync (worktree)` block.
 
    ```markdown
    ## Stage: Sync (worktree) (<ISO 8601 timestamp>)
@@ -72,13 +74,13 @@ The stage note lives in an `exclude-paths` dir, so it triggers no release — bu
 2. Rebase onto the ref `/ship` will merge into — **local** `main`, which the shared `.git` makes visible: `git rebase main`.
    If `git rev-list --count main..origin/main` is non-zero, local `main` is behind the remote; stop and report, since the root must `git pull` before this rebase has the right target.
 3. On a conflict: run `git rebase --abort`, then stop and report the conflicting files.
-   Name what actually collided — `git log --oneline HEAD..main` for the commits, and the conflicting hunks — not a cause inferred from the file's recent history (Refs #870).
+   Name what actually collided — `git log --oneline HEAD..main` for the commits, and the conflicting hunks — not a cause inferred from the file's recent history.
    Do not auto-resolve — the operator decides.
    One exception: when both sides *only add* distinct `[#N]:` link-definition lines and no line was edited on both sides, keep every line, order them ascending by number, and continue with `GIT_EDITOR=true git rebase --continue`.
-   That collision has one correct resolution and needs no operator decision (Refs #863).
+   That collision has one correct resolution and needs no operator decision.
    Any other conflict — including one where a definition's URL differs — still aborts and stops.
 4. Verify the merge will succeed: `git merge-base --is-ancestor main HEAD`.
-   This, not the `origin/main` comparison, is what predicts the ff-merge (Refs #815).
+   This, not the `origin/main` comparison, is what predicts the ff-merge.
 5. Confirm no stage note in the retro file cites a SHA the rebase just rewrote:
 
    ```bash
@@ -88,7 +90,7 @@ The stage note lives in an `exclude-paths` dir, so it triggers no release — bu
    ```
 
    Rewrite each hit to the commit's subject and amend.
-   This covers the TDD stage note as well as step 3's, since every pre-rebase stage wrote its SHAs against the old history (Refs #814, #914).
+   This covers the TDD stage note as well as step 3's, since every pre-rebase stage wrote its SHAs against the old history.
 
 Do **not** push this branch and do **not** force-push anything — the root session shares this repo's `.git` and merges the local branch ref directly.
 

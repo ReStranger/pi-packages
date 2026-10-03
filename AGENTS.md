@@ -63,6 +63,10 @@ It also reflows what you just wrote (line wrapping, quote style), so an `oldText
 A slash command's expanded body is a snapshot from when the Pi process loaded it — so after this session edits a `.pi/prompts/*.md` template, a later same-process invocation of that command can run the **pre-edit** copy.
 When the pasted prompt body contradicts the on-disk file (e.g. you just changed `/ship` and its steps read stale), treat the **on-disk file as authoritative** and follow it, not the injected text.
 
+### Stale skill bodies
+
+A skill read earlier in the session is a snapshot; after a `git pull` that changed `.pi/skills/`, re-read it before following it, even where a prompt says to skip skills already loaded.
+
 ### Stale in-process extension code
 
 Pi loads each package's extension once at session start, so a session that edits — or fast-forward-merges — `packages/<pkg>/src/` keeps running the **pre-merge** tool for the rest of its life.
@@ -125,7 +129,7 @@ Before adding a passage here, answer three questions in order:
    If yes, keep the rule and drop the story; a `(Refs #N)` stays only when the issue encodes a constraint a reader may need to trace.
 
 A rule whose incident has not recurred in any retro since 2026-07-20 is a delete candidate — guidance, not a verdict, since the rule may be why it has not recurred.
-`/audit-agent-docs` applies this test to the whole file and the skills on demand.
+`/audit-agent-docs` applies this test on demand to this file, the skills, the prompt templates, and the subagent definitions.
 
 ## Index
 
@@ -152,6 +156,7 @@ Before you do the thing in the left column, load the skill in the right one.
 | run or read `fallow`                                                                                 | `fallow`                 |
 | plan an improvement round or edit a roadmap                                                          | `improvement-discovery`  |
 | decide when an extension flushes, notifies, or intercepts                                            | `pi-extension-lifecycle` |
+| assess a new Pi release or diagnose a Pi version regression                                          | `upstream-watch`         |
 | finish `/tdd-plan` or `/build-plan`                                                                  | `pre-completion`         |
 | file a GitHub issue                                                                                  | `roadmap-fit`            |
 | settle a design in `/plan-issue`, before writing the plan                                            | `tidy-first`             |

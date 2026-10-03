@@ -50,6 +50,7 @@ Release: independent
 **Cause:** the record is produced, never implemented.
 
 - **Hard dependency:** after Step 1, which creates the choke point.
+- **Soft dependency:** after Step 1 (the choke point this step's policy reads).
 - **Impact 3 / Risk 2 / Priority 12.**
 
 Release: batch "front-door-majors"
@@ -94,6 +95,7 @@ Release: independent
 **Cause:** the affordance is rendered from \`pendingQuestion\` alone.
 
 - **Hard dependency:** after [#857], which creates the condition.
+- **Soft dependency:** [#857], whose refusal this step stops advertising.
 - **Impact 2 / Risk 2 / Priority 8.**
 
 Release: independent
@@ -174,6 +176,17 @@ describe("parseRoadmap", () => {
       expect(roadmap.steps[0].hardDependency).toBeNull();
     });
 
+    it("resolves an ordinal soft dependency claim to the issue it names", () => {
+      expect(roadmap.steps[1].softDependency).toEqual({
+        present: true,
+        dependsOn: [724],
+      });
+    });
+
+    it("records the absence of a soft dependency bullet as null", () => {
+      expect(roadmap.steps[0].softDependency).toBeNull();
+    });
+
     it("reads diagram edges by issue, taking the issue from the node label", () => {
       expect(roadmap.edges).toEqual([
         { from: 724, to: 830, kind: "hard" },
@@ -215,11 +228,65 @@ describe("parseRoadmap", () => {
       });
     });
 
-    it("classifies every dashed-edge spelling as soft", () => {
+    it("reads a bracketed soft dependency claim without resolving an ordinal", () => {
+      expect(roadmap.steps[1].softDependency).toEqual({
+        present: true,
+        dependsOn: [857],
+      });
+    });
+
+    it("reads only the labelled `-.soft.->` spelling as a soft edge", () => {
       expect(roadmap.edges).toEqual([
         { from: 857, to: 878, kind: "hard" },
-        { from: 857, to: 878, kind: "soft" },
-        { from: 857, to: 878, kind: "soft" },
+        { from: 857, to: 878, kind: "unrecognized", spelling: "-.->" },
+        {
+          from: 857,
+          to: 878,
+          kind: "unrecognized",
+          spelling: "-.informs.->",
+        },
+      ]);
+    });
+  });
+
+  describe("diagram edge spellings", () => {
+    /** @param {string} link */
+    const edgesDrawnWith = (link) =>
+      parseRoadmap(`## Improvement roadmap — Phase 1: Example
+
+### Steps
+
+### Step dependency diagram
+
+\`\`\`mermaid
+flowchart TD
+    S1["#1<br/>One"] ${link} S2["#2<br/>Two"]
+\`\`\`
+`).edges;
+
+    it.each(["-->"])("reads %s as a hard edge", (link) => {
+      expect(edgesDrawnWith(link)).toEqual([{ from: 1, to: 2, kind: "hard" }]);
+    });
+
+    it.each(["-.soft.->", "-. soft .->"])("reads %s as a soft edge", (link) => {
+      expect(edgesDrawnWith(link)).toEqual([{ from: 1, to: 2, kind: "soft" }]);
+    });
+
+    it.each([
+      "-.->",
+      "-..->",
+      "-.informs.->",
+      "-. informs .->",
+      "-.->|soft|",
+      '-.->|"soft ordering — shared input-normalizer.ts churn"|',
+      "-->|blocks|",
+      "--->",
+      "==>",
+      "-- hard -->",
+      "== hard ==>",
+    ])("keeps %s as an unrecognized edge with its spelling", (link) => {
+      expect(edgesDrawnWith(link)).toEqual([
+        { from: 1, to: 2, kind: "unrecognized", spelling: link },
       ]);
     });
   });

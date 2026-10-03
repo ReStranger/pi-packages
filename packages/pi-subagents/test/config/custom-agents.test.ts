@@ -120,6 +120,18 @@ Custom tools.`);
     expect(result.get("custom-tools")!.toolNames).toEqual(["read", "my_custom_tool", "grep"]);
   });
 
+  it("keeps an MCP tool pattern intact", () => {
+    writeAgent("mcp-tools", `---
+tools: read, mcp__github__*
+---
+
+GitHub tools.`);
+
+    const result = loadCustomAgents(tmpDir);
+    // The child expands the pattern against the parent's tools when it is created.
+    expect(result.get("mcp-tools")!.toolNames).toEqual(["read", "mcp__github__*"]);
+  });
+
   describe("tools field forms", () => {
     it("accepts a YAML block sequence", () => {
       writeAgent("block-seq", `---

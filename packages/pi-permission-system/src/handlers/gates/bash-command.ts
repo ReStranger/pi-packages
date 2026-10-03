@@ -75,7 +75,7 @@ export function resolveBashCommandCheck(
   resolver: ScopedPermissionResolver,
 ): PermissionCheckResult {
   if (isTriviallyEmptyCommand(command)) {
-    return resolveOnBashSurface(command, agentName, resolver);
+    return resolveOnBashSurface(command, [], agentName, resolver);
   }
 
   if (!commands.some((cmd) => cmd.salvaged !== true)) {
@@ -86,7 +86,7 @@ export function resolveBashCommandCheck(
     // from the wreckage: `> f <<'M' 2>&1 | rm -rf /tmp/x` has zero primary
     // units and one salvaged one, and keying the check on the combined list
     // would silently drop a `deny` the pre-salvage gate reached (#875).
-    const whole = resolveOnBashSurface(command, agentName, resolver);
+    const whole = resolveOnBashSurface(command, [], agentName, resolver);
     if (whole.state === "deny") {
       return whole;
     }
@@ -107,7 +107,7 @@ export function resolveBashCommandCheck(
   );
   return (
     pickMostRestrictive(results) ??
-    resolveOnBashSurface(command, agentName, resolver)
+    resolveOnBashSurface(command, [], agentName, resolver)
   );
 }
 
@@ -122,7 +122,12 @@ function resolveCommandUnit(
   agentName: string | undefined,
   resolver: ScopedPermissionResolver,
 ): PermissionCheckResult {
-  const base = resolveOnBashSurface(cmd.text, agentName, resolver);
+  const base = resolveOnBashSurface(
+    cmd.text,
+    cmd.spellings ?? [],
+    agentName,
+    resolver,
+  );
   const floored =
     cmd.wrapperKind && base.state === "allow"
       ? resolveWrapperUnit(cmd, cmd.wrapperKind, base, agentName, resolver)
@@ -204,7 +209,7 @@ function resolveWrapperUnit(
   // `command`, and naming a fragment of the command line there would offer a
   // grant that does not cover what the user is looking at.
   return {
-    ...resolveOnBashSurface(inner, agentName, resolver),
+    ...resolveOnBashSurface(inner, [], agentName, resolver),
     command: base.command,
     floorExemption: cmd.floorExemption,
   };
@@ -225,21 +230,26 @@ function isTriviallyEmptyCommand(command: string): boolean {
 }
 
 /**
- * Resolve one command string against the `bash` surface's rules.
+ * Resolve one command string, and the other spellings the shell runs it by,
+ * against the `bash` surface's rules.
  *
  * Three callers share it: each command unit of the chain, the whole command
  * when the chain yields no units, and the inner command of a wrapper the floor
- * no longer covers.
+ * no longer covers. Only a unit has spellings: they come from the program
+ * analysis that produced it, and the whole command or a wrapper's inner text
+ * has no unit of its own to carry them.
  */
 function resolveOnBashSurface(
   command: string,
+  spellings: readonly string[],
   agentName: string | undefined,
   resolver: ScopedPermissionResolver,
 ): PermissionCheckResult {
   return resolver.resolve({
-    kind: "tool",
+    kind: "bash-command",
     surface: "bash",
-    input: { command },
+    command,
+    spellings,
     agentName,
   });
 }

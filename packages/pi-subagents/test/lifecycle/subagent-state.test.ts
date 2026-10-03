@@ -343,6 +343,77 @@ describe("SubagentState — resetForResume", () => {
 		expect(state.consumedAt).toBeUndefined();
 		expect(state.consumed).toBe(false);
 	});
+
+	describe("run ordinal", () => {
+		it("numbers the first run 1", () => {
+			const state = new SubagentState({ status: "queued" });
+			expect(state.run).toBe(1);
+		});
+
+		it("does not count the first run's start as a new run", () => {
+			const state = new SubagentState({ status: "queued" });
+			state.markRunning(1000);
+			expect(state.run).toBe(1);
+		});
+
+		it("counts each resume as a new run", () => {
+			const state = new SubagentState({ status: "completed" });
+			state.resetForResume(9000);
+			state.markCompleted("second", 9500);
+			state.resetForResume(9900);
+			expect(state.run).toBe(3);
+		});
+	});
+
+	describe("superseded outcome", () => {
+		it("retains what the reset run ended with", () => {
+			const state = new SubagentState({
+				status: "completed",
+				result: "first result",
+				startedAt: 1000,
+				completedAt: 5000,
+				pendingQuestion: "Which one?",
+				workspaceNotice: "Saved to branch x.",
+			});
+			state.recordUpdate("owed");
+			state.recordUpdate("announced");
+			state.markUpdateAnnounced("announced");
+
+			state.resetForResume(9000);
+
+			expect(state.supersededOutcome(1)).toEqual({
+				status: "completed",
+				result: "first result",
+				error: undefined,
+				startedAt: 1000,
+				completedAt: 5000,
+				pendingQuestion: "Which one?",
+				workspaceNotice: "Saved to branch x.",
+				runUpdates: ["owed"],
+			});
+		});
+
+		it("answers nothing for the run still current", () => {
+			const state = new SubagentState({ status: "completed", result: "first result" });
+			state.resetForResume(9000);
+			expect(state.supersededOutcome(2)).toBeUndefined();
+		});
+
+		it("answers nothing before any resume", () => {
+			const state = new SubagentState({ status: "completed", result: "first result" });
+			expect(state.supersededOutcome(1)).toBeUndefined();
+		});
+
+		it("keeps only the most recently superseded run", () => {
+			const state = new SubagentState({ status: "completed", result: "first result" });
+			state.resetForResume(9000);
+			state.markCompleted("second result", 9500);
+			state.resetForResume(9900);
+
+			expect(state.supersededOutcome(1)).toBeUndefined();
+			expect(state.supersededOutcome(2)?.result).toBe("second result");
+		});
+	});
 });
 
 describe("SubagentState — consumption", () => {
@@ -394,16 +465,16 @@ describe("SubagentState — carrier claim", () => {
 		expect(state.claimed).toBe(true);
 	});
 
-	it("release hands responsibility back", () => {
+	it("releaseClaims hands responsibility back", () => {
 		const state = new SubagentState({ status: "running" });
 		state.claim();
-		state.release();
+		state.releaseClaims();
 		expect(state.claimed).toBe(false);
 	});
 
-	it("release without a prior claim is a no-op", () => {
+	it("releaseClaims without a prior claim is a no-op", () => {
 		const state = new SubagentState({ status: "running" });
-		state.release();
+		state.releaseClaims();
 		expect(state.claimed).toBe(false);
 	});
 
@@ -419,9 +490,64 @@ describe("SubagentState — carrier claim", () => {
 		state.claim();
 		expect(state.consumed).toBe(false);
 		state.markConsumed(5000);
-		state.release();
+		state.releaseClaims();
 		expect(state.claimed).toBe(false);
 		expect(state.consumedAt).toBe(5000);
+	});
+
+	describe("claim handles", () => {
+		it("keeps the outcome claimed while another holder remains", () => {
+			const state = new SubagentState({ status: "running" });
+			const first = state.claim();
+			state.claim();
+
+			first.release();
+
+			expect(state.claimed).toBe(true);
+		});
+
+		it("hands responsibility back once every holder released", () => {
+			const state = new SubagentState({ status: "running" });
+			const first = state.claim();
+			const second = state.claim();
+
+			second.release();
+			first.release();
+
+			expect(state.claimed).toBe(false);
+		});
+
+		it("releasing one handle twice drops only its own claim", () => {
+			const state = new SubagentState({ status: "running" });
+			const first = state.claim();
+			state.claim();
+
+			first.release();
+			first.release();
+
+			expect(state.claimed).toBe(true);
+		});
+
+		it("releaseClaims clears every holder", () => {
+			const state = new SubagentState({ status: "running" });
+			state.claim();
+			state.claim();
+
+			state.releaseClaims();
+
+			expect(state.claimed).toBe(false);
+		});
+
+		it("a handle released after releaseClaims leaves a later claim in place", () => {
+			const state = new SubagentState({ status: "running" });
+			const stale = state.claim();
+			state.releaseClaims();
+			state.claim();
+
+			stale.release();
+
+			expect(state.claimed).toBe(true);
+		});
 	});
 
 	it("survives resetForResume, which clears consumption but not the claim", () => {

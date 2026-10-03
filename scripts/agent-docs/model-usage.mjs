@@ -22,8 +22,8 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Pi encodes a session store's directory name from the cwd it was launched in.
-const DEFAULT_SESSIONS_DIR = join(homedir(), ".pi", "agent", "sessions");
-const DEFAULT_PREFIX = "--Users-chris-development-pi-pi-packages";
+export const DEFAULT_SESSIONS_DIR = join(homedir(), ".pi", "agent", "sessions");
+export const DEFAULT_PREFIX = "--Users-chris-development-pi-pi-packages";
 // Session names follow the AGENTS.md convention: "#865 Planning — <title>".
 const STAGE_PATTERN = /^#(\d+)\s+([^—]+?)\s+—/;
 const UNNAMED = "(unnamed)";

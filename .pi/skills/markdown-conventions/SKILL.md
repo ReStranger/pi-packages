@@ -92,6 +92,10 @@ An insertion point that reads correctly at the seam can reparent what follows it
 - ADR numbering is per-package, but `[ADR-NNNN]` reference-link definitions are file-scoped and may already point to another package's ADR (e.g. pi-subagents' `[ADR-0002]`).
   When citing this package's own ADR in such a doc, reference it by path (`docs/decisions/NNNN-<slug>.md`), not a bare `ADR-NNNN` token.
 
+### Version numbers
+
+Never name an unreleased version in docs, nor write a plan step that does — `next-version.sh` prints a prediction that moves with every commit; name the condition instead ("the major after 36.x").
+
 ## Documentation frontmatter
 
 Docs under `docs/plans/` and `docs/retro/` use YAML frontmatter for structured metadata.

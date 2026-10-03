@@ -8,6 +8,7 @@ import type { ScopedPermissionResolver } from "#src/policy/permission-resolver";
 import { resolveBashAdvisoryCheck } from "#src/service/bash-advisory-check";
 import type { PermissionCheckResult } from "#src/types";
 
+import { bashCommandOf } from "#test/helpers/gate-fixtures";
 import { makeCheckResult } from "#test/helpers/handler-fixtures";
 
 /**
@@ -20,11 +21,10 @@ function makeBashResolver(
 ): ScopedPermissionResolver {
   return {
     resolve: vi.fn((intent: AccessIntent): PermissionCheckResult => {
-      if (intent.kind === "tool" && intent.surface === "bash") {
-        const command = (intent.input as { command?: string }).command ?? "";
-        return byCommand[command] ?? fallback;
-      }
-      return fallback;
+      const command = bashCommandOf(intent);
+      return command === undefined
+        ? fallback
+        : (byCommand[command] ?? fallback);
     }),
   };
 }
@@ -78,9 +78,10 @@ describe("resolveBashAdvisoryCheck", () => {
       expect(result.matchedPattern).toBe("npm *");
       // Each unit is evaluated on the bash surface.
       expect(resolver.resolve).toHaveBeenCalledWith({
-        kind: "tool",
+        kind: "bash-command",
         surface: "bash",
-        input: { command: "npm install x" },
+        command: "npm install x",
+        spellings: [],
         agentName: undefined,
       });
     });
@@ -178,6 +179,27 @@ describe("resolveBashAdvisoryCheck", () => {
 
       const result = resolveBashAdvisoryCheck(
         "git commit -F - <<'MSG' 2>&1 | rm -rf /tmp/x\nmsg\nMSG",
+        undefined,
+        resolver,
+      );
+
+      expect(result.state).toBe("deny");
+      expect(result.matchedPattern).toBe("rm -rf *");
+    });
+
+    it("reports the deny covering a command after a heredoc the grammar cannot parse", () => {
+      // The salvage re-parses the line's heredoc-free spelling, and the
+      // advisory path must see it too or it answers weaker than the gate.
+      const resolver = makeBashResolver({
+        "rm -rf /tmp/x": makeCheckResult({
+          state: "deny",
+          toolName: "bash",
+          matchedPattern: "rm -rf *",
+        }),
+      });
+
+      const result = resolveBashAdvisoryCheck(
+        "cat <<EOF ; rm -rf /tmp/x\nb\nEOF",
         undefined,
         resolver,
       );

@@ -23,6 +23,7 @@ function makeReport(overrides: Partial<AgentReport> = {}): AgentReport {
 		conversation: undefined,
 		transcriptPath: undefined,
 		resumeRefusal: undefined,
+		model: undefined,
 		...overrides,
 	};
 }
@@ -205,6 +206,17 @@ describe("formatAgentReport", () => {
 		);
 	});
 
+	it("names the model on its own line between the type line and the description", () => {
+		const text = formatAgentReport(makeReport({ model: "anthropic/claude-haiku-4-5" }));
+		expect(text).toBe(
+			"Agent: agent-1\n" +
+				"Type: General | Status: completed | Tool uses: 3 | Duration: 12.3s\n" +
+				"Model: anthropic/claude-haiku-4-5\n" +
+				"Description: Investigate the bug\n\n" +
+				"All done.",
+		);
+	});
+
 	it("appends the conversation block when present", () => {
 		const text = formatAgentReport(
 			makeReport({ conversation: "[User]: hello" }),
@@ -225,5 +237,33 @@ describe("formatAgentReport", () => {
 	it("omits the transcript line when transcriptPath is absent", () => {
 		const text = formatAgentReport(makeReport({ transcriptPath: undefined }));
 		expect(text).not.toContain("Full transcript available at:");
+	});
+
+	describe("an agent resumed while the call waited", () => {
+		it("closes the outcome by saying the agent is running again, before the transcript pointer", () => {
+			const text = formatAgentReport(
+				makeReport({ resumedWhileWaiting: true, transcriptPath: "/tasks/agent.jsonl" }),
+			);
+			expect(text).toBe(
+				"Agent: agent-1\n" +
+					"Type: General | Status: completed | Tool uses: 3 | Duration: 12.3s\n" +
+					"Description: Investigate the bug\n\n" +
+					"All done.\n\n" +
+					"This agent was resumed before this wait returned and is running again \u2014 " +
+					"call get_subagent_result for that run's outcome.\n\n" +
+					"Full transcript available at: /tasks/agent.jsonl",
+			);
+		});
+
+		it("adds nothing for an agent that was not resumed", () => {
+			const text = formatAgentReport(makeReport({ transcriptPath: "/tasks/agent.jsonl" }));
+			expect(text).toBe(
+				"Agent: agent-1\n" +
+					"Type: General | Status: completed | Tool uses: 3 | Duration: 12.3s\n" +
+					"Description: Investigate the bug\n\n" +
+					"All done.\n\n" +
+					"Full transcript available at: /tasks/agent.jsonl",
+			);
+		});
 	});
 });

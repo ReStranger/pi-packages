@@ -1,3 +1,4 @@
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
   isTerminalErrorStatus,
@@ -13,7 +14,7 @@ import { GLYPHS } from "#src/ui/glyphs";
 
 /** Narrow theme interface — only the methods the renderer actually calls. */
 interface RendererTheme {
-  fg(style: string, text: string): string;
+  fg(color: ThemeColor, text: string): string;
   bold(text: string): string;
 }
 
@@ -42,7 +43,7 @@ interface RenderOptions {
 /** Resolved status→presentation product: icon glyph/style and status label. */
 export interface StatusPresentation {
   iconGlyph: string;
-  iconStyle: string;
+  iconStyle: ThemeColor;
   statusText: string;
 }
 
@@ -128,7 +129,7 @@ export function createUpdateRenderer() {
     const d = message.details;
     if (!d) return undefined;
 
-    let line = `${theme.fg("info", GLYPHS.agentsActive)} ${theme.bold(d.description)} ${theme.fg("dim", "update")}`;
+    let line = `${theme.fg("accent", GLYPHS.agentsActive)} ${theme.bold(d.description)} ${theme.fg("dim", "update")}`;
     for (const l of buildPreviewLines(d.message, expanded)) {
       line += "\n  " + theme.fg("dim", expanded ? `  ${l}` : `${GLYPHS.subLine}  ${l}`);
     }

@@ -2,8 +2,13 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   buildDirectionalSessionLabels,
   buildForwardedScopeLabels,
+  buildPathAccessSessionLabel,
   describeGrantTarget,
 } from "#src/presentation/pattern-suggest";
+import {
+  describePromptNotice,
+  type NotificationSession,
+} from "#src/presentation/prompt-notification";
 import {
   emitUiPromptEvent,
   type PermissionEventBus,
@@ -37,6 +42,8 @@ export interface LocalUserAuthorizerDeps {
   getPromptPreferences: () => PromptPreferences;
   /** Injected for testability; production callers pass the real function. */
   requestPermissionDecision: typeof requestPermissionDecision;
+  /** Read when each prompt opens, so a session named mid-session is picked up. */
+  describeSession: () => NotificationSession;
 }
 
 /**
@@ -77,15 +84,21 @@ export class LocalUserAuthorizer implements TerminalAuthorizer {
     details: PromptPermissionDetails,
   ): Promise<PermissionPromptDecision> {
     emitUiPromptEvent(this.deps.events, buildUiPrompt(details));
+    const title = details.forwarding
+      ? "Permission Required (Subagent)"
+      : "Permission Required";
     return this.deps.requestPermissionDecision(
       {
         mode: this.deps.mode,
         ui: this.deps.ui,
         ...this.deps.getPromptPreferences(),
+        notice: describePromptNotice(
+          title,
+          details.payload.request,
+          this.deps.describeSession(),
+        ),
       },
-      details.forwarding
-        ? "Permission Required (Subagent)"
-        : "Permission Required",
+      title,
       details.payload,
       buildRequestOptions(details),
     );
@@ -114,9 +127,10 @@ function unansweredDecision(reason: string): PermissionPromptDecision {
 /**
  * The dialog options this ask offers, composed from three independent groups.
  *
- * The label names what the session grant covers (a gate-supplied one, or one
- * derived from the grants themselves for a path ask). An ask whose grants all
- * prove the same direction additionally offers the both-directions width
+ * The label names what the session grant covers: the proven direction and
+ * target for a directional path ask, else a gate-supplied label, else the
+ * target alone for a path ask that proves no direction. An ask whose grants
+ * all prove the same direction additionally offers the both-directions width
  * (#813). A forwarded ask additionally offers the scope choice (subagent vs
  * whole session).
  *
@@ -132,7 +146,11 @@ function buildRequestOptions(
   const widths = direction
     ? buildDirectionalSessionLabels(direction, describeGrantTarget(grants))
     : null;
-  const sessionLabel = widths?.sessionLabel ?? details.sessionLabel;
+  const sessionLabel =
+    widths?.sessionLabel ??
+    details.sessionLabel ??
+    buildPathAccessSessionLabel(grants) ??
+    undefined;
 
   const options: RequestPermissionOptions = {
     ...(sessionLabel ? { sessionLabel } : {}),

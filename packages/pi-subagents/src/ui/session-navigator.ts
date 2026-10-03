@@ -10,6 +10,11 @@
  * `renderSessionContext` mapping. Rendering lives here, not in the pure module,
  * because the components require a `TUI`, `cwd`, and markdown theme.
  *
+ * Its chrome is two labeled rules in the style of Pi's editor border: the top
+ * names the agent, its task, model, and thinking level; the bottom carries the
+ * scroll position and key hints. Both take the thinking level's border colour,
+ * read from the source on every render, so a live child's change repaints them.
+ *
  * The pane is strictly read-only — steering stays in the `steer_subagent` tool
  * and the widget. It consumes a `TranscriptSource`, so a released agent's disk
  * snapshot (`fileSnapshotSource`) swaps in without touching the renderer or the pane.
@@ -27,24 +32,41 @@ import {
   matchesKey,
   type TUI,
   truncateToWidth,
-  visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { AgentConfigLookup } from "#src/config/agent-types";
-import type { Theme } from "#src/ui/display";
-import { fileSnapshotSource, listNavigableAgents, liveSource, type NavigableSubagent, type TranscriptSource } from "#src/ui/session-navigation";
+import { formatModel, type ModelIdentity, type Theme } from "#src/ui/display";
+import { labeledRule } from "#src/ui/labeled-rule";
+import {
+  type EntryHeading,
+  fileSnapshotSource,
+  listNavigableAgents,
+  liveSource,
+  type NavigableSubagent,
+  type TranscriptSource,
+} from "#src/ui/session-navigation";
 import { TranscriptContent } from "#src/ui/transcript-content";
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Chrome lines: the header and the footer. The pane is docked, so it needs no frame. */
+/** Chrome lines: the header rule and the footer rule. The pane is docked, so it needs no frame. */
 const CHROME_LINES = 2;
 const MIN_VIEWPORT = 3;
 const VIEWPORT_HEIGHT_PCT = 70;
 
+/**
+ * The pane's theme: the shared narrow `Theme` plus the one method only the pane
+ * needs. Pi's own `Theme` satisfies it; the widening stays here so the other
+ * render sites' theme stubs do not grow.
+ */
+export type TranscriptTheme = Theme & {
+  /** Pi's editor-border colour for a thinking level; an unknown level paints as `off`. */
+  getThinkingBorderColor(level: string): (text: string) => string;
+};
+
 /** Component factory shape Pi's `ui.custom` invokes to mount a component. */
 export type CustomComponentFactory<R> = (
   tui: TUI,
-  theme: Theme,
+  theme: TranscriptTheme,
   keybindings: unknown,
   done: (result: R) => void,
 ) => Component;
@@ -70,8 +92,10 @@ export interface SessionNavigatorParams {
 /** Options for the read-only transcript pane. */
 export interface TranscriptPaneOptions {
   tui: TUI;
-  theme: Theme;
+  theme: TranscriptTheme;
   source: TranscriptSource;
+  /** Who produced the transcript, named in the header rule. */
+  heading: EntryHeading;
   done: (result: undefined) => void;
   cwd: string;
   markdownTheme: MarkdownTheme;
@@ -109,7 +133,7 @@ export class SessionNavigatorHandler {
     const markdownTheme = getMarkdownTheme();
     await ui.custom<undefined>(
       (tui, theme, _keybindings, done) =>
-        new TranscriptPane({ tui, theme, source, done, cwd, markdownTheme }),
+        new TranscriptPane({ tui, theme, source, heading: entry.heading, done, cwd, markdownTheme }),
       { overlay: false },
     );
   }
@@ -129,15 +153,19 @@ export class TranscriptPane implements Component {
   private closed = false;
 
   private readonly tui: TUI;
-  private readonly theme: Theme;
+  private readonly theme: TranscriptTheme;
+  private readonly source: TranscriptSource;
+  private readonly heading: EntryHeading;
   private readonly done: (result: undefined) => void;
   private readonly content: TranscriptContent;
   /** Width the host last rendered at; input must use the same layout. */
   private renderedWidth: number | undefined;
 
-  constructor({ tui, theme, source, done, cwd, markdownTheme }: TranscriptPaneOptions) {
+  constructor({ tui, theme, source, heading, done, cwd, markdownTheme }: TranscriptPaneOptions) {
     this.tui = tui;
     this.theme = theme;
+    this.source = source;
+    this.heading = heading;
     this.done = done;
     this.content = new TranscriptContent({ tui, cwd, markdownTheme, source });
     this.unsubscribe = source.subscribe((event) => {
@@ -183,11 +211,12 @@ export class TranscriptPane implements Component {
     this.renderedWidth = width;
     const lines: string[] = [];
 
-    // No frame, so no padding either: a row padded to the full terminal width
-    // wraps onto the next terminal row.
+    // Rows span at most the width the host supplied: pi-tui rejects a wider one.
     const fit = (content: string): string => truncateToWidth(content, width);
+    const { model, thinkingLevel } = this.source.sessionModel();
+    const paint = th.getThinkingBorderColor(thinkingLevel ?? "off");
 
-    lines.push(fit(th.bold("Subagent session")));
+    lines.push(labeledRule(width, paint, this.headerLabels(model, thinkingLevel)));
 
     const { totalLines, viewportHeight, maxScroll } = this.scrollBounds(width);
     if (this.autoScroll) this.scrollOffset = maxScroll;
@@ -199,10 +228,9 @@ export class TranscriptPane implements Component {
       totalLines <= viewportHeight
         ? "100%"
         : `${Math.round(((visibleStart + viewportHeight) / totalLines) * 100)}%`;
-    const footerLeft = th.fg("dim", `${totalLines} lines · ${scrollPct}`);
-    const footerRight = th.fg("dim", "↑↓ scroll · PgUp/PgDn · Esc close");
-    const footerGap = Math.max(1, width - visibleWidth(footerLeft) - visibleWidth(footerRight));
-    lines.push(fit(footerLeft + " ".repeat(footerGap) + footerRight));
+    const position = th.fg("dim", `${totalLines} lines · ${scrollPct}`);
+    const hints = th.fg("dim", "↑↓ scroll · PgUp/PgDn · Esc close");
+    lines.push(labeledRule(width, paint, [position], [hints]));
 
     return lines;
   }
@@ -221,6 +249,19 @@ export class TranscriptPane implements Component {
   }
 
   // ---- Private ----
+
+  /**
+   * Header labels, most to least informative: the rule drops the task first,
+   * then the model and thinking level, before it truncates the agent's name.
+   */
+  private headerLabels(model: ModelIdentity | undefined, thinkingLevel: string | undefined): string[] {
+    const th = this.theme;
+    const { name, modeLabel, description } = this.heading;
+    const identity = th.bold(name) + (modeLabel ? ` ${th.fg("muted", `(${modeLabel})`)}` : "");
+    const runtime = describeRuntime(model, thinkingLevel);
+    const runtimeTag = runtime ? th.fg("muted", ` · ${runtime}`) : "";
+    return [`${identity}  ${th.fg("muted", description)}${runtimeTag}`, identity + runtimeTag, identity];
+  }
 
   /**
    * Scroll geometry at a given layout width.
@@ -252,4 +293,15 @@ export class TranscriptPane implements Component {
     const cap = Math.floor((this.tui.terminal.rows * VIEWPORT_HEIGHT_PCT) / 100) - CHROME_LINES;
     return Math.max(MIN_VIEWPORT, Math.min(totalLines, cap));
   }
+}
+
+/**
+ * `anthropic/claude-sonnet-5 • high`, in Pi's footer wording: `thinking off` rather
+ * than a bare `off`, and `thinking <level>` when no model is named to attach it to.
+ */
+function describeRuntime(model: ModelIdentity | undefined, thinkingLevel: string | undefined): string {
+  if (!model) return thinkingLevel ? `thinking ${thinkingLevel}` : "";
+  if (!thinkingLevel) return formatModel(model);
+  const level = thinkingLevel === "off" ? "thinking off" : thinkingLevel;
+  return `${formatModel(model)} • ${level}`;
 }

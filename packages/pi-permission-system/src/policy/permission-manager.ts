@@ -1,6 +1,9 @@
 import { join } from "node:path";
 import type { ResolvedAccessIntent } from "#src/access-intent/access-intent";
-import { normalizeInput } from "#src/access-intent/input-normalizer";
+import {
+  normalizeBashCommand,
+  normalizeInput,
+} from "#src/access-intent/input-normalizer";
 import { surfaceFamilyOf } from "#src/access-intent/path-surfaces";
 import { classifyToolKind } from "#src/access-intent/tool-kind";
 import {
@@ -21,7 +24,7 @@ import type {
   PermissionState,
 } from "#src/types";
 import { isPermissionState } from "#src/types";
-import { normalizeFlatConfig } from "./normalize";
+import { normalizeFlatConfig, relocateMcpToolKeyRules } from "./normalize";
 import type { Rule, RuleOrigin, Ruleset } from "./rule";
 import {
   evaluate,
@@ -30,7 +33,7 @@ import {
   isSurfaceFullyDenied,
   rewriteAsksToYolo,
 } from "./rule";
-import { mergeScopesWithOrigins } from "./scope-merge";
+import { type MergedScopes, mergeScopesWithOrigins } from "./scope-merge";
 import {
   composeRuleset,
   synthesizeBaseline,
@@ -62,6 +65,11 @@ type ResolvedPermissions = {
    * names also drive the fail-closed notice in {@link getConfigIssues}.
    */
   failClosedScopes: RuleOrigin[];
+  /**
+   * Top-level permission keys naming Pi MCP tools, relocated onto the `mcp`
+   * surface; they drive the port notice in {@link getConfigIssues}.
+   */
+  legacyMcpToolKeys: string[];
 };
 
 /**
@@ -152,7 +160,8 @@ export class PermissionManager implements ScopedPermissionManager {
 
   getConfigIssues(agentName?: string): string[] {
     // Trigger a load/resolve to ensure issues are collected.
-    const { failClosedScopes } = this.resolvePermissions(agentName);
+    const { failClosedScopes, legacyMcpToolKeys } =
+      this.resolvePermissions(agentName);
     const issues = [...this.loader.getConfigIssues()];
     if (failClosedScopes.length > 0) {
       issues.push(
@@ -160,6 +169,9 @@ export class PermissionManager implements ScopedPermissionManager {
           `failing closed: 'allow' rules are clamped to 'ask' for this session ` +
           `until the configuration is corrected.`,
       );
+    }
+    if (legacyMcpToolKeys.length > 0) {
+      issues.push(formatMcpToolKeyPortNotice(legacyMcpToolKeys));
     }
     return issues;
   }
@@ -201,26 +213,16 @@ export class PermissionManager implements ScopedPermissionManager {
     const universalFallbackOrigin: RuleOrigin =
       origins.get("*")?.get("*") ?? "builtin";
 
-    // Build config rules from everything except the universal "*" key.
-    const permissionWithoutUniversal: FlatPermissionConfig = Object.fromEntries(
-      Object.entries(mergedPermission).filter(([k]) => k !== "*"),
-    );
-
-    // Normalize to config rules, tagged with "config" layer and their origin.
-    const configRules: Ruleset = normalizeFlatConfig(
-      permissionWithoutUniversal,
-    ).map(
-      (r): Rule => ({
-        ...r,
-        layer: "config",
-        origin: origins.get(r.surface)?.get(r.pattern) ?? "builtin",
-      }),
-    );
+    const configRules = buildConfigRules(mergedPermission, origins);
+    // A top-level `mcp__…` key now names an `mcp` candidate. The baseline reads
+    // the rules as written, so a relocated `allow` on one Pi MCP tool does not
+    // newly open the proxy's discovery targets.
+    const relocation = relocateMcpToolKeyRules(configRules);
 
     const composedRules = composeRuleset(
       synthesizeDefaults(universalFallback, universalFallbackOrigin),
       synthesizeBaseline(configRules),
-      configRules,
+      relocation.rules,
     );
 
     // Fail closed when a non-global scope's config is invalid: floor every
@@ -241,6 +243,7 @@ export class PermissionManager implements ScopedPermissionManager {
     const value: ResolvedPermissions = {
       composedRules: effectiveRules,
       failClosedScopes,
+      legacyMcpToolKeys: [...new Set(relocation.relocatedKeys)],
     };
     this.resolvedPermissionsCache.set(cacheKey, { stamp, value });
     return value;
@@ -263,10 +266,14 @@ export class PermissionManager implements ScopedPermissionManager {
    */
   getToolPermission(toolName: string, agentName?: string): PermissionState {
     const { composedRules } = this.resolvePermissions(agentName);
-    // Every surface (special, bash, mcp, skill, path-bearing, and extension
-    // tools) resolves its tool-level state identically: evaluate the surface
-    // name against the "*" catch-all value. There is no per-kind branch.
-    return evaluate(toolName.trim(), "*", composedRules, this.flavor).action;
+    const name = toolName.trim();
+    if (classifyToolKind(name) === "mcp-tool") {
+      return this.resolvePiMcpTool(name, composedRules);
+    }
+    // Every other surface (special, bash, mcp, skill, path-bearing, and
+    // extension tools) resolves its tool-level state identically: evaluate the
+    // surface name against the "*" catch-all value.
+    return evaluate(name, "*", composedRules, this.flavor).action;
   }
 
   /**
@@ -284,7 +291,30 @@ export class PermissionManager implements ScopedPermissionManager {
    */
   isToolFullyDenied(toolName: string, agentName?: string): boolean {
     const { composedRules } = this.resolvePermissions(agentName);
-    return isSurfaceFullyDenied(toolName.trim(), composedRules, this.flavor);
+    const name = toolName.trim();
+    if (classifyToolKind(name) === "mcp-tool") {
+      return this.resolvePiMcpTool(name, composedRules) === "deny";
+    }
+    return isSurfaceFullyDenied(name, composedRules, this.flavor);
+  }
+
+  /**
+   * The action a Pi MCP tool resolves to on the `mcp` surface.
+   *
+   * Its candidates come from its name alone, never its input, so this one
+   * answer is both its tool-level state and whether it is fully denied.
+   */
+  private resolvePiMcpTool(
+    toolName: string,
+    composedRules: Ruleset,
+  ): PermissionState {
+    const { surface, values } = normalizeInput(
+      toolName,
+      undefined,
+      this.loader.getConfiguredMcpServerNames(),
+    );
+    return evaluateAnyValue(surface, values, composedRules, this.flavor).rule
+      .action;
   }
 
   /**
@@ -294,9 +324,11 @@ export class PermissionManager implements ScopedPermissionManager {
    * extension surfaces). Path-bearing surfaces arrive as `"path-values"` via
    * the access-path gate (#502) or service/RPC builder (#503).
    * `"path-values"` → evaluates the precomputed values directly.
+   * `"bash-command"` → evaluates a bash command unit and its spellings as
+   * aliases through `normalizeBashCommand`.
    *
    * The manager stays string-based by design: it consumes `ResolvedAccessIntent`
-   * (`tool | path-values`) and never imports `AccessPath`. This deliberate
+   * (`tool | path-values | bash-command`) and never imports `AccessPath`. This deliberate
    * boundary is formalized in ADR-0002
    * (`docs/decisions/0002-path-values-string-boundary.md`) and guarded by a
    * `no-restricted-imports` lint rule on this file.
@@ -325,6 +357,22 @@ export class PermissionManager implements ScopedPermissionManager {
         {},
         intent.surface,
         intent.surface,
+        fullRules,
+        this.flavor,
+      );
+    }
+
+    if (intent.kind === "bash-command") {
+      const { surface, values, resultExtras } = normalizeBashCommand(
+        intent.command,
+        intent.spellings,
+      );
+      return buildCheckResult(
+        surface,
+        values,
+        resultExtras,
+        surface,
+        surface,
         fullRules,
         this.flavor,
       );
@@ -389,6 +437,39 @@ function buildCheckResult(
   };
 }
 
+const MCP_TOOL_KEY_MIGRATION_GUIDE =
+  "https://github.com/gotgenes/pi-packages/blob/main/packages/pi-permission-system/docs/migration/1001-pi-mcp-tools-on-mcp-surface.md";
+
+/** The notice asking the operator to move top-level `mcp__…` keys under `mcp`. */
+function formatMcpToolKeyPortNotice(keys: readonly string[]): string {
+  const named = keys.map((key) => `"${key}"`).join(", ");
+  return (
+    `Top-level permission keys naming Pi MCP tools are applied as "mcp" rules: ${named}. ` +
+    `Move them under "mcp" — see ${MCP_TOOL_KEY_MIGRATION_GUIDE}`
+  );
+}
+
+/**
+ * Build the config-layer rules from the merged permission object: every key
+ * except the universal `"*"` (which feeds `synthesizeDefaults` only), each
+ * rule tagged with the `config` layer and the scope that contributed it.
+ */
+function buildConfigRules(
+  mergedPermission: FlatPermissionConfig,
+  origins: MergedScopes["origins"],
+): Ruleset {
+  const permissionWithoutUniversal: FlatPermissionConfig = Object.fromEntries(
+    Object.entries(mergedPermission).filter(([k]) => k !== "*"),
+  );
+  return normalizeFlatConfig(permissionWithoutUniversal).map(
+    (r): Rule => ({
+      ...r,
+      layer: "config",
+      origin: origins.get(r.surface)?.get(r.pattern) ?? "builtin",
+    }),
+  );
+}
+
 /**
  * Derive `PolicyLoaderOptions` from an agentDir + an optional cwd.
  * Setting agentsDir explicitly from agentDir removes the hidden
@@ -403,6 +484,9 @@ function derivePolicyLoaderOptions(
     agentsDir: join(agentDir, "agents"),
     projectGlobalConfigPath: cwd ? getProjectConfigPath(cwd) : undefined,
     projectAgentsDir: cwd ? getProjectAgentsDir(cwd) : undefined,
+    // Pi's built-in MCP reads these two files (`extensions/mcp/config.ts`).
+    globalMcpConfigPath: join(agentDir, "mcp.json"),
+    projectMcpConfigPath: cwd ? join(cwd, ".pi", "mcp.json") : undefined,
   };
 }
 
@@ -414,7 +498,7 @@ function derivePolicyLoaderOptions(
  *
  * - session          → "session" (always, all surfaces)
  * - mcp + default    → "default"
- * - mcp + other      → "mcp"
+ * - mcp + other      → "mcp" (the proxy and Pi MCP tools alike)
  * - special          → "special" (always)
  * - skill            → "skill" (always)
  * - bash             → "bash" (always)
@@ -431,6 +515,7 @@ function deriveSource(
 
   switch (classifyToolKind(toolName)) {
     case "mcp":
+    case "mcp-tool":
       return rule.layer === "default" ? "default" : "mcp";
     case "skill":
       return "skill";

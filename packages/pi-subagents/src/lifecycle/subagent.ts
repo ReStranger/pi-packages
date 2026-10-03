@@ -13,7 +13,7 @@ import type { CreateSubagentSessionParams } from "#src/lifecycle/create-subagent
 import type { ParentSnapshot } from "#src/lifecycle/parent-snapshot";
 import { RunListeners } from "#src/lifecycle/run-listeners";
 import type { SubagentSession, TurnLoopResult } from "#src/lifecycle/subagent-session";
-import { SubagentState, type SubagentStatus } from "#src/lifecycle/subagent-state";
+import { type CarrierClaim, type SettledOutcome, SubagentState, type SubagentStatus } from "#src/lifecycle/subagent-state";
 import type { LifetimeUsage } from "#src/lifecycle/usage";
 import type { WorkspaceProvider } from "#src/lifecycle/workspace";
 import { WorkspaceBracket } from "#src/lifecycle/workspace-bracket";
@@ -77,6 +77,17 @@ export type SteerOutcome =
 	| { kind: "delivered" }
 	| { kind: "buffered" }
 	| { kind: "rejected"; status: SubagentStatus };
+
+/**
+ * What happened to the run a `waitUntilSettled` call waited on: it settled and
+ * is still the current run; it has not settled (the wait was interrupted, or
+ * there was no run to wait on); or a resume replaced it after it settled,
+ * carrying what it ended with.
+ */
+export type WaitOutcome =
+	| { kind: "settled" }
+	| { kind: "unsettled" }
+	| { kind: "superseded"; outcome: SettledOutcome };
 
 /**
  * The execution machinery a Subagent needs to run. A single mandatory
@@ -182,6 +193,8 @@ export class Subagent {
 	// (transcript pointer) survives and the resume path can tell "released" from
 	// "never had a session."
 	private _releasedOutputFile?: string;
+	private _releasedModel?: Model<any>;
+	private _releasedThinkingLevel?: ThinkingLevel;
 	private _sessionReleased = false;
 	/** True once releaseSession() has freed a live session (distinct from never having had one). */
 	get sessionReleased(): boolean { return this._sessionReleased; }
@@ -205,6 +218,20 @@ export class Subagent {
 	 */
 	get outputFile(): string | undefined {
 		return this.subagentSession?.outputFile ?? this._releasedOutputFile;
+	}
+
+	/**
+	 * The model this agent runs: the live session's (so a mid-run switch shows),
+	 * then the one captured at releaseSession(), then the spawn override.
+	 * Undefined for an inherited model until the session exists.
+	 */
+	get model(): Model<any> | undefined {
+		return this.subagentSession?.model ?? this._releasedModel ?? this.execution.model;
+	}
+
+	/** The thinking level this agent runs at, resolved in the same order as `model`. */
+	get thinkingLevel(): ThinkingLevel | undefined {
+		return this.subagentSession?.thinkingLevel ?? this._releasedThinkingLevel ?? this.execution.thinkingLevel;
 	}
 
 	/** The tool call ID that spawned this background agent, if any. */
@@ -457,11 +484,19 @@ export class Subagent {
 	 * When `signal` fires the wait ends early and the agent keeps running: this
 	 * is a query, so interrupting it must not cancel the work. Cancelling the
 	 * work on a parent interrupt is InterruptHandler's separate decision.
+	 *
+	 * Reports what happened to the run the wait began on. A resume can start
+	 * between that run settling and the waiter continuing (a consumer resuming
+	 * from the completion event does), so a record that reads active afterwards
+	 * is not necessarily the run that was waited on.
 	 */
-	async waitUntilSettled(signal: AbortSignal): Promise<void> {
-		const run = this._promise;
-		if (!run || !this.isActive()) return;
-		await settleOrAbort(run, signal);
+	async waitUntilSettled(signal: AbortSignal): Promise<WaitOutcome> {
+		const waitedRun = this.state.run;
+		const handle = this._promise;
+		if (handle && this.isActive()) await settleOrAbort(handle, signal);
+		const superseded = this.state.run === waitedRun ? undefined : this.state.supersededOutcome(waitedRun);
+		if (superseded) return { kind: "superseded", outcome: superseded };
+		return this.isActive() ? { kind: "unsettled" } : { kind: "settled" };
 	}
 
 	/**
@@ -582,18 +617,22 @@ export class Subagent {
 		this.state.markUpdateAnnounced(message);
 	}
 
-	/** A carrier has committed to delivering this outcome; nothing else announces it. */
-	claim(): void {
-		this.state.claim();
+	/**
+	 * A carrier has committed to delivering this outcome; nothing else announces
+	 * it. The returned handle lets a carrier that abandons its commitment (a
+	 * waiter whose parent turn was interrupted) drop only its own.
+	 */
+	claim(): CarrierClaim {
+		return this.state.claim();
 	}
 
-	/** The carrier abandoned its commitment; announcing is owed again. */
-	// Called on the `Subagent` returned by `getRecord()` from get-result-tool.ts
-	// and agent-tool.ts, both of which declare it through their own structural
-	// interface — fallow cannot trace through interfaces, and reaches this only
-	// through the release-then-announce test.
-	release(): void {
-		this.state.release();
+	/**
+	 * No carrier holds this outcome; announcing is owed again. Called when a
+	 * resume nobody claims starts (SubagentManager.startResume), clearing the
+	 * claims previous carriers left after they delivered.
+	 */
+	releaseClaims(): void {
+		this.state.releaseClaims();
 	}
 
 	/**
@@ -697,6 +736,8 @@ export class Subagent {
 		if (!session) return;
 		this.disposeHeldWorkspace();
 		this._releasedOutputFile = session.outputFile;
+		this._releasedModel = session.model;
+		this._releasedThinkingLevel = session.thinkingLevel;
 		this.subagentSession = undefined;
 		this._sessionReleased = true;
 		await disposeQuietly(session, "child session release");

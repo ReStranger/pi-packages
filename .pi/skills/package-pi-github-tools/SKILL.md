@@ -40,6 +40,21 @@ src/
 
 The package ships no configuration.
 
+## Upstream assumptions
+
+The `/upstream-impact` watchlist for this package; the `upstream-watch` skill defines the impact classes.
+Paths are relative to the Pi checkout.
+
+| Our assumption                                                                                                                                          | Upstream file                                                                                                                                                                                 | Breaks as                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| A tool reports failure by returning `isError: true` rather than throwing, and Pi surfaces it to the model as an error; true only from Pi 0.99.0 (#1003) | `packages/agent/src/agent-loop.ts` (`executePreparedToolCall`); `packages/agent/src/types.ts` (`AgentToolResult.isError`)                                                                     | Behavioral-silent: every `err()` reads as success, as it does on every host before 0.99.0                        |
+| `execute`'s `signal` aborts on cancel, and `onUpdate` partials are accepted until `execute` returns                                                     | `packages/agent/src/types.ts` (`AgentTool.execute`, `AgentToolUpdateCallback`); `packages/agent/src/agent-loop.ts`                                                                            | Behavioral-silent: `ci_watch` ignores cancel, or progress stops streaming; our `OnUpdate` is a hand-copied shape |
+| `promptSnippet` on `registerTool` reaches the system prompt                                                                                             | `packages/coding-agent/src/core/extensions/types.ts` (`ToolDefinition.promptSnippet`); `packages/coding-agent/src/core/agent-session.ts` (`_normalizePromptSnippet`)                          | Behavioral-silent: tools stay callable but lose their prompt hint                                                |
+| `import { Type } from "typebox"` resolves to Pi's aliased typebox                                                                                       | `packages/coding-agent/src/core/extensions/loader.ts` (module aliases)                                                                                                                        | Behavioral-silent: schema validation mismatches, or a load failure in the compiled binary                        |
+| `gh` runs in Pi's process cwd, which equals the session cwd                                                                                             | `packages/coding-agent/src/core/extensions/types.ts` (`ExtensionContext.cwd`); `packages/coding-agent/src/core/agent-session-runtime.ts` (session switch takes the session's cwd, no `chdir`) | Coverage-gap, already live: after resuming a session recorded in another directory, `gh` targets the launch repo |
+
+`test/progress.test.ts` pins the `onUpdate` payload shape against our own type only; no test runs the tools through Pi.
+
 ## Testing
 
 - Mock `runCommand` in `lib/` tests to avoid real `gh` calls — every lib test should run offline.

@@ -1,18 +1,25 @@
 /**
  * display.ts — Pure formatting helpers and display utilities for agent UI.
  *
- * All functions are stateless and dependency-free (no SDK, no widget lifecycle).
+ * All functions are stateless and dependency-free (no SDK runtime imports, no widget lifecycle).
  * Consumed by the widget, the menu, tool modules, and the notification renderer.
  */
 
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { AgentConfigLookup } from "#src/config/agent-types";
 import type { AgentInvocation, SubagentType } from "#src/types";
 import { GLYPHS } from "#src/ui/glyphs";
 
 // ---- Types ----
 
+/** A model as the UI names it. The SDK's `Model` satisfies it structurally. */
+export interface ModelIdentity {
+  readonly provider: string;
+  readonly id: string;
+}
+
 export type Theme = {
-  fg(color: string, text: string): string;
+  fg(color: ThemeColor, text: string): string;
   bold(text: string): string;
 };
 
@@ -29,7 +36,7 @@ export interface AgentDetails {
   activity?: string;
   /** Current spinner frame index (for animated running indicator). */
   spinnerFrame?: number;
-  /** Short model name if different from parent (e.g. "haiku", "sonnet"). */
+  /** The `provider/id` of the model the agent runs (e.g. "anthropic/claude-haiku-4-5"). */
   modelName?: string;
   /** Notable config tags (e.g. ["thinking: high", "inherit context"]). */
   tags?: string[];
@@ -108,6 +115,16 @@ export function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+/** A model as `provider/id`, the syntax the Agent tool's `model` argument accepts. */
+export function formatModel(model: ModelIdentity): string {
+  return `${model.provider}/${model.id}`;
+}
+
+/** A model's `provider/id` label, or undefined while the model is unknown. */
+export function modelLabel(model: ModelIdentity | undefined): string | undefined {
+  return model ? formatModel(model) : undefined;
+}
+
 /** Format duration from start/completed timestamps. */
 export function formatDuration(startedAt: number, completedAt?: number): string {
   if (completedAt) return formatMs(completedAt - startedAt);
@@ -131,14 +148,14 @@ export function getPromptModeLabel(type: SubagentType, registry: AgentConfigLook
 /** Mode label is not included — callers add it where they want it. */
 export function buildInvocationTags(
   invocation: AgentInvocation | undefined,
-): { modelName?: string; tags: string[] } {
+): { tags: string[] } {
   const tags: string[] = [];
   if (!invocation) return { tags };
   if (invocation.thinking) tags.push(`thinking: ${invocation.thinking}`);
   if (invocation.inheritContext) tags.push("inherit context");
   if (invocation.runInBackground) tags.push("background");
   if (invocation.maxTurns != null) tags.push(`max turns: ${invocation.maxTurns}`);
-  return { modelName: invocation.modelName, tags };
+  return { tags };
 }
 
 /** Truncate text to a single line, max `len` chars. */

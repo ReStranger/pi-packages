@@ -16,11 +16,13 @@ import { getLifetimeTotal } from "#src/lifecycle/usage";
 import type { SubagentType } from "#src/types";
 import {
 	describeActivity,
+	formatModel,
 	formatMs,
 	formatSessionTokens,
 	formatTurns,
 	getDisplayName,
 	getPromptModeLabel,
+	type ModelIdentity,
 	type Theme,
 } from "#src/ui/display";
 import { GLYPHS, SPINNER } from "#src/ui/glyphs";
@@ -46,6 +48,8 @@ export interface WidgetAgent {
 	readonly responseText: string;
 	/** Context-window utilisation (0–100), or null when unavailable. */
 	readonly contextPercent: number | null;
+	/** The model the agent runs, once known. */
+	readonly model?: ModelIdentity;
 }
 
 // ── Per-agent rendering ──────────────────────────────────────────────────────
@@ -87,7 +91,7 @@ export function renderFinishedLine(
 	parts.push(duration);
 
 	const modeTag = modeLabel ? ` ${theme.fg("dim", `(${modeLabel})`)}` : "";
-	return `${icon} ${theme.fg("dim", name)}${modeTag}  ${theme.fg("dim", agent.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}${statusText}`;
+	return `${icon} ${theme.fg("dim", name)}${modeTag}${modelTag(agent, theme)}  ${theme.fg("dim", agent.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}${statusText}`;
 }
 
 /** Render a single running agent as header + activity line pair (no tree connector prefix). */
@@ -115,10 +119,15 @@ export function renderRunningLines(
 	const frame = SPINNER[spinnerFrame % SPINNER.length];
 	const activityText = describeActivity(agent.activeTools, agent.responseText);
 
-	const header = `${theme.fg("accent", frame)} ${theme.bold(name)}${modeTag}  ${theme.fg("muted", agent.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", statsText)}`;
+	const header = `${theme.fg("accent", frame)} ${theme.bold(name)}${modeTag}${modelTag(agent, theme)}  ${theme.fg("muted", agent.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", statsText)}`;
 	const activityLine = theme.fg("dim", `  ${GLYPHS.subLine}  ${activityText}`);
 
 	return [header, activityLine];
+}
+
+/** ` [provider/id]` after the agent's name, or nothing while the model is unknown. */
+function modelTag(agent: WidgetAgent, theme: Theme): string {
+	return agent.model ? ` ${theme.fg("dim", `[${formatModel(agent.model)}]`)}` : "";
 }
 
 // ── Full widget rendering ────────────────────────────────────────────────────

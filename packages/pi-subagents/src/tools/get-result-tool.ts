@@ -1,8 +1,9 @@
 import type { AgentToolResult, ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { AgentConfigLookup } from "#src/config/agent-types";
+import type { SettledOutcome } from "#src/lifecycle/subagent-state";
 import {
 	type GetResultDetails,
 	PREVIEW_CHARS,
@@ -12,7 +13,7 @@ import { type AgentReport, formatAgentReport } from "#src/tools/get-result-repor
 import { formatLifetimeTokens, textResult } from "#src/tools/helpers";
 import type { Subagent } from "#src/types";
 import { BoundedLines } from "#src/ui/bounded-lines";
-import { formatDuration, getDisplayName, type Theme } from "#src/ui/display";
+import { formatDuration, getDisplayName, modelLabel, type Theme } from "#src/ui/display";
 import { GLYPHS } from "#src/ui/glyphs";
 
 // ---- Deps interfaces ----
@@ -45,54 +46,69 @@ export class GetResultTool {
 		// it is still awaitable — a queued agent counts, because scheduleVia()
 		// captures its limiter promise at spawn. A parent interrupt ends the wait
 		// without cancelling the agent, leaving the outcome uncollected below.
-		const waited = params.wait === true;
-		if (waited) {
+		//
+		// Pull-delivery edge: the parent is collecting the settled outcome here, so
+		// mark it consumed. A wait whose run has not settled was abandoned, so it
+		// releases the claim it made and lets the nudge announce. The handle drops
+		// only this call's claim, so a concurrent carrier's (such as a resume that
+		// started as the run settled) is never cleared by this call.
+		//
+		// A resume that replaced the waited run after it settled leaves this call
+		// the only carrier of what that run ended with: its nudge was suppressed by
+		// this call's claim. So the report carries that outcome, not the live run's.
+		// Consumption is record-wide and now belongs to the resumed run, so it is
+		// not marked here; doing so would silence a background resume's nudge.
+		let superseded: SettledOutcome | undefined;
+		if (params.wait === true) {
 			// Waiting commits this call to delivering the outcome, so claim it before
 			// the agent can settle and be announced by the nudge instead.
-			record.claim();
-			await record.waitUntilSettled(signal);
-		}
-
-		// Pull-delivery edge: the parent is collecting the settled outcome here, so
-		// mark it consumed. An agent still active after a wait means the wait was
-		// abandoned, so release the claim this call made and let the nudge announce.
-		// Only a wait that claimed may release, so a concurrent carrier's claim is
-		// never cleared by this call.
-		if (!record.isActive()) {
+			const claim = record.claim();
+			const wait = await record.waitUntilSettled(signal);
+			if (wait.kind === "settled") record.markConsumed();
+			else claim.release();
+			if (wait.kind === "superseded") superseded = wait.outcome;
+		} else if (!record.isActive()) {
 			record.markConsumed();
-		} else if (waited) {
-			record.release();
 		}
 
 		const verbose = params.verbose === true;
+		const outcome = superseded ? withoutQuestion(superseded) : liveOutcome(record);
 		return textResult<GetResultDetails>(
-			formatAgentReport(this.buildReport(record, verbose)),
-			this.buildGetResultDetails(record, verbose),
+			formatAgentReport(this.buildReport(record, outcome, verbose, superseded !== undefined)),
+			this.buildGetResultDetails(record, outcome, verbose),
 		);
 	}
 
-	private buildReport(record: Subagent, verbose?: boolean): AgentReport {
+	/** The report: outcome fields from `outcome`, everything else from the live record. */
+	private buildReport(
+		record: Subagent,
+		outcome: SettledOutcome,
+		verbose: boolean,
+		resumedWhileWaiting: boolean,
+	): AgentReport {
 		return {
 			id: record.id,
 			displayName: getDisplayName(record.type, this.registry),
-			status: record.status,
+			status: outcome.status,
 			toolUses: record.toolUses,
 			tokens: formatLifetimeTokens(record),
 			contextPercent: record.getContextPercent(),
 			compactionCount: record.compactionCount,
-			duration: formatDuration(record.startedAt, record.completedAt),
+			duration: formatDuration(outcome.startedAt, outcome.completedAt),
 			description: record.description,
-			result: record.result,
-			error: record.error,
+			result: outcome.result,
+			error: outcome.error,
 			stoppedWhileQueued: record.stoppedWhileQueued,
 			conversation: verbose ? record.getConversation() : undefined,
 			// Transcript pointer: lets the parent read the full session from disk,
 			// and covers verbose after the live session was released (no conversation).
 			transcriptPath: record.outputFile,
-			runUpdates: record.runUpdates,
-			pendingQuestion: record.pendingQuestion,
+			runUpdates: outcome.runUpdates,
+			pendingQuestion: outcome.pendingQuestion,
 			resumeRefusal: record.resumeRefusal,
-			workspaceNotice: record.workspaceNotice,
+			workspaceNotice: outcome.workspaceNotice,
+			model: modelLabel(record.model),
+			resumedWhileWaiting,
 		};
 	}
 
@@ -102,21 +118,22 @@ export class GetResultTool {
 	 * Named in full because `helpers.ts` exports a module-level `buildDetails`
 	 * producing the structurally different `AgentDetails`.
 	 */
-	private buildGetResultDetails(record: Subagent, verbose: boolean): GetResultDetails {
+	private buildGetResultDetails(record: Subagent, outcome: SettledOutcome, verbose: boolean): GetResultDetails {
 		return {
 			agentId: record.id,
 			displayName: getDisplayName(record.type, this.registry),
-			status: record.status,
+			status: outcome.status,
 			description: record.description,
 			toolUses: record.toolUses,
 			tokens: formatLifetimeTokens(record),
 			contextPercent: record.getContextPercent(),
 			compactionCount: record.compactionCount,
-			duration: formatDuration(record.startedAt, record.completedAt),
-			preview: buildPreview(record.result),
-			error: record.error,
+			duration: formatDuration(outcome.startedAt, outcome.completedAt),
+			preview: buildPreview(outcome.result),
+			error: outcome.error,
 			verbose,
 			transcriptPath: record.outputFile,
+			modelName: modelLabel(record.model),
 		};
 	}
 
@@ -182,6 +199,29 @@ export class GetResultTool {
 			) => this.execute(toolCallId, params, signal, onUpdate, ctx),
 		});
 	}
+}
+
+/** The live record's current outcome fields. */
+function liveOutcome(record: Subagent): SettledOutcome {
+	return {
+		status: record.status,
+		result: record.result,
+		error: record.error,
+		startedAt: record.startedAt,
+		completedAt: record.completedAt,
+		pendingQuestion: record.pendingQuestion,
+		workspaceNotice: record.workspaceNotice,
+		runUpdates: record.runUpdates,
+	};
+}
+
+/**
+ * A superseded run's outcome without its question: the resume that replaced it
+ * is that question's answer, and the live record's refusal (still running)
+ * would tell the parent to wait and answer it again.
+ */
+function withoutQuestion(outcome: SettledOutcome): SettledOutcome {
+	return { ...outcome, pendingQuestion: undefined };
 }
 
 /** The first non-empty line of a result body, clipped to the preview budget. */

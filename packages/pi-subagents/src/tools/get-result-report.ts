@@ -46,6 +46,16 @@ export interface AgentReport {
 	resumeRefusal: ResumeRefusal | undefined;
 	/** Where a teardown with no result text to carry it saved the agent's work. */
 	workspaceNotice?: string;
+	/**
+	 * The model's `provider/id`; undefined while an inherited model is still unknown.
+	 * Required, so a report builder cannot leave it out by omission.
+	 */
+	model: string | undefined;
+	/**
+	 * The run this report describes was replaced by a resume before the call's
+	 * wait returned, so the agent is running again.
+	 */
+	resumedWhileWaiting?: boolean;
 }
 
 /** Assemble the stats parts: Tool uses / tokens? / Context? / Compactions? / Duration. */
@@ -71,9 +81,15 @@ export function formatAgentReport(report: AgentReport): string {
 	let output =
 		`Agent: ${report.id}\n` +
 		`Type: ${report.displayName} | Status: ${report.status}${renderStatusNote(report.status)} | ${renderStatsParts(report).join(" | ")}\n` +
+		(report.model ? `Model: ${report.model}\n` : "") +
 		`Description: ${report.description}\n\n`;
 	output += renderReportBody(report);
 	output += renderOutcomeAddenda(report);
+	if (report.resumedWhileWaiting) {
+		output +=
+			"\n\nThis agent was resumed before this wait returned and is running again \u2014 " +
+			"call get_subagent_result for that run's outcome.";
+	}
 	if (report.conversation) {
 		output += `\n\n--- Agent Conversation ---\n${report.conversation}`;
 	}

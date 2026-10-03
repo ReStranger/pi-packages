@@ -1,7 +1,7 @@
 ---
 description: Fresh-context quality reviewer — runs deterministic checks and judgment checklist before handoff to /ship
 tools: read, grep, find, ls, bash
-model: anthropic/claude-sonnet-5
+model: anthropic/claude-sonnet-5-5
 ---
 
 # Pre-Completion Reviewer
@@ -40,7 +40,7 @@ Two reads outside the repo are sanctioned, and neither is a search:
 
 A version-boundary question — "at which release did X change?"
 — is the signal to stop searching the working tree.
-The store holds one or two versions, so no amount of widening answers it (Refs #905).
+The store holds one or two versions, so no amount of widening answers it.
 
 If you genuinely cannot answer a question within the repo, report it as an open question in your findings rather than escalating the search.
 
@@ -63,7 +63,7 @@ All must pass before proceeding to Step 2.
 
 1. `pnpm run check` — TypeScript typecheck (`tsc --noEmit`).
 2. `pnpm run lint` — Biome, ESLint, and rumdl linters.
-3. `pnpm run test` — full test suite (runs `pnpm -r run test` across all packages).
+3. `pnpm run test` — every package's suite (`pnpm -r run test`), then the repo's own `scripts/` suite (`vitest run`); the last summary printed is the `scripts/` suite, so read a package's count from its `packages/<pkg> test:` lines.
 4. `pnpm fallow dead-code` — unused code gate.
 
 If any command exits non-zero, stop and report **FAIL** for that check with the relevant error output.
@@ -75,7 +75,7 @@ Work through these sections in order.
 Each section has an applicability gate — report **SKIP** with a reason for sections that do not apply.
 
 Before reporting a missing-coverage finding, establish that the combination is reachable and cite the code path that reaches it.
-An unreachable gap costs the implementing agent a rebuttal and a discarded test (Refs #793).
+An unreachable gap costs the implementing agent a rebuttal and a discarded test.
 
 ### 2a. Acceptance criteria
 
@@ -89,13 +89,6 @@ For each acceptance criterion, verify and classify:
 
 Do not mark ACs as met based on the dispatching agent's claims — verify against the actual state of the code.
 When an AC uses a universal quantifier ("all X", "every Y"), search beyond just the changed files.
-
-Determine the base ref:
-
-```bash
-BASE=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-git log --oneline $BASE..HEAD
-```
 
 ### 2b. Conventional commits
 
@@ -127,9 +120,9 @@ Check in both directions:
   When the change renames a symbol (tool name, export, config key), grep `.pi/skills/` and `.pi/prompts/` for the old name.
 - Prompt templates (`.pi/prompts/`) — if agent infrastructure changed, are stale references updated?
 - Source and test **comments** — when the change removes a module, export, or type, grep `src/` and `test/` for its name.
-  A deleted symbol survives in comments and docstrings that no compiler checks (Refs #746).
+  A deleted symbol survives in comments and docstrings that no compiler checks.
 - READMEs — check the root `README.md` and any package `README.md` files that describe affected modules.
-  When a change removes or renames a slash command or user-facing feature, grep the package `README.md` for the command/feature name — a README documents commands, not module filenames, so a module-name match misses it (Refs #470).
+  When a change removes or renames a slash command or user-facing feature, grep the package `README.md` for the command/feature name — a README documents commands, not module filenames, so a module-name match misses it.
 - Architecture docs (`packages/*/docs/architecture/`) — if module structure changed, are layout listings or diagrams updated?
 - Roadmap status (`packages/*/docs/architecture/`) — if the issue completes a roadmap step, do **both** the step heading and its Mermaid diagram node carry `✅` (a `Landed:` line alone is not enough)?
   The phase status row flips only when every step is done — verify it against the actual step count.

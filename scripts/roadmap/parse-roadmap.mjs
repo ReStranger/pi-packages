@@ -21,13 +21,15 @@ import { parseStepReferenceRun } from "./step-references.mjs";
  * @property {{ impact: number, risk: number, priority: number }|null} scores
  * @property {string[]} releaseTags every `Release:` line in the block, so "exactly one" is checkable
  * @property {{ present: true, dependsOn: number[] }|null} hardDependency null when the bullet is absent
+ * @property {{ present: true, dependsOn: number[] }|null} softDependency null when the bullet is absent
  */
 
 /**
- * @typedef {object} RoadmapEdge
- * @property {number} from
- * @property {number} to
- * @property {"hard"|"soft"} kind
+ * A diagram edge. The vocabulary has two kinds; any other link is kept, with
+ * its spelling, so the validator can report it rather than lose it.
+ *
+ * @typedef {{ from: number, to: number, kind: "hard"|"soft" }
+ *   | { from: number, to: number, kind: "unrecognized", spelling: string }} RoadmapEdge
  */
 
 /**
@@ -51,9 +53,22 @@ const ISSUE_HEADING = /^(?:✅ )?\[#(\d+)\] (.*)$/;
 const SCORES = /\*\*Impact (\d+) \/ Risk (\d+) \/ Priority (\d+)\.\*\*/;
 const RELEASE_LINE = /^Release: (.*)$/gm;
 const HARD_DEPENDENCY = /^- \*\*Hard dependency:\*\* (.*)$/m;
+const SOFT_DEPENDENCY = /^- \*\*Soft dependency:\*\* (.*)$/m;
+/** Every step field holding a dependency claim, each resolved from ordinals alike. */
+const DEPENDENCY_FIELDS = /** @type {const} */ ([
+  "hardDependency",
+  "softDependency",
+]);
 const MERMAID_FENCE = /```mermaid\n([\s\S]*?)```/;
 const LABELLED_NODE = /\b(S\w+)\["([^"]*)"\]/g;
-const EDGE = /\b(S\w+)(?:\["[^"]*"\])?\s*(-->|-\.[^>]*?->)\s*(S\w+)/g;
+// A Mermaid link: plain or thick arrows of any length (`-->`, `--->`, `==>`),
+// dotted arrows with or without inline text (`-.->`, `-.soft.->`), solid or
+// thick arrows with inline text (`-- x -->`, `== x ==>`), each optionally
+// followed by a `|label|`.
+const EDGE =
+  /\b(S\w+)(?:\["[^"]*"\])?\s*(-{2,}>|={2,}>|-\.+(?:[^>|\n]*?\.)?->|--[^>|\n]*?-->|==[^>|\n]*?==>)(\|[^|\n]*\|)?\s*(S\w+)/g;
+const HARD_LINK = "-->";
+const SOFT_LINK = /^-\.\s*soft\s*\.->$/;
 
 /**
  * Parse the live `## Improvement roadmap` section out of an architecture
@@ -131,17 +146,19 @@ function parseSteps(stepsBody) {
       ? reference.n
       : (issueByOrdinal.get(reference.n) ?? reference.n);
 
-  return steps.map((step) =>
-    step.hardDependency === null
-      ? step
-      : {
-          ...step,
-          hardDependency: {
-            present: true,
-            dependsOn: step.hardDependency.dependsOn.map(resolve),
-          },
-        },
-  );
+  return steps.map((step) => {
+    const resolved = { ...step };
+    for (const field of DEPENDENCY_FIELDS) {
+      const claim = step[field];
+      if (claim !== null) {
+        resolved[field] = {
+          present: true,
+          dependsOn: claim.dependsOn.map(resolve),
+        };
+      }
+    }
+    return resolved;
+  });
 }
 
 /**
@@ -155,7 +172,6 @@ function parseStep(block) {
 
   const body = rest.join("\n");
   const scores = SCORES.exec(body);
-  const dependency = HARD_DEPENDENCY.exec(body);
 
   return {
     ...identity,
@@ -170,11 +186,21 @@ function parseStep(block) {
     releaseTags: [...body.matchAll(RELEASE_LINE)].map((match) =>
       match[1].trim(),
     ),
-    hardDependency:
-      dependency === null
-        ? null
-        : { present: true, dependsOn: parseStepReferenceRun(dependency[1]) },
+    hardDependency: parseDependencyClaim(HARD_DEPENDENCY, body),
+    softDependency: parseDependencyClaim(SOFT_DEPENDENCY, body),
   };
+}
+
+/**
+ * @param {RegExp} bulletPattern
+ * @param {string} body
+ * @returns {{ present: true, dependsOn: import("./step-references.mjs").StepReference[] }|null}
+ */
+function parseDependencyClaim(bulletPattern, body) {
+  const bullet = bulletPattern.exec(body);
+  return bullet === null
+    ? null
+    : { present: true, dependsOn: parseStepReferenceRun(bullet[1]) };
 }
 
 /**
@@ -199,7 +225,7 @@ function parseStepHeading(heading) {
 /**
  * The node ID spells the ordinal under one heading shape and the issue under
  * the other, so the issue is read from the label, which carries it either way.
- * A solid arrow is a hard dependency; every dashed spelling is soft.
+ * Only `-->` is hard and only `-.soft.->` is soft; see `classifyLink`.
  *
  * @param {string} section
  * @returns {{ edges: RoadmapEdge[], nodeIssues: number[] }}
@@ -217,10 +243,24 @@ function parseDiagram(section) {
   const edges = [];
   for (const edge of fence[1].matchAll(EDGE)) {
     const from = issueByNode.get(edge[1]);
-    const to = issueByNode.get(edge[3]);
+    const to = issueByNode.get(edge[4]);
     if (from === undefined || to === undefined) continue;
-    edges.push({ from, to, kind: edge[2] === "-->" ? "hard" : "soft" });
+    edges.push({ from, to, ...classifyLink(edge[2], edge[3]) });
   }
 
   return { edges, nodeIssues: [...issueByNode.values()] };
+}
+
+/**
+ * A `|label|` makes any link unrecognized, even on an arrow the vocabulary
+ * uses, so a label can never quietly carry a meaning the checker ignores.
+ *
+ * @param {string} arrow
+ * @param {string|undefined} pipeLabel the `|label|` text including its pipes
+ * @returns {{ kind: "hard"|"soft" } | { kind: "unrecognized", spelling: string }}
+ */
+function classifyLink(arrow, pipeLabel) {
+  if (pipeLabel === undefined && arrow === HARD_LINK) return { kind: "hard" };
+  if (pipeLabel === undefined && SOFT_LINK.test(arrow)) return { kind: "soft" };
+  return { kind: "unrecognized", spelling: arrow + (pipeLabel ?? "") };
 }

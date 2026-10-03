@@ -673,7 +673,7 @@ describe("NotificationManager", () => {
         const parent = makePiParent();
         const record = createTestSubagent({ id: "live-1", status: "running" });
         record.claim();
-        record.release();
+        record.releaseClaims();
 
         parent.manager.sendUpdate(record, "Course change.");
 

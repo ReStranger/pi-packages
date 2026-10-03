@@ -6,6 +6,7 @@ import { SubagentState, type SubagentStateInit } from "#src/lifecycle/subagent-s
 import type { WorkspacePrepareContext, WorkspaceProvider } from "#src/lifecycle/workspace";
 import type { RunConfig } from "#src/runtime";
 import type { CompactionInfo, SubagentType } from "#src/types";
+import { makeModel } from "#test/helpers/make-model";
 import { createTestSubagent, makeStubExecution } from "#test/helpers/make-subagent";
 import { makeWorkspace, makeWorkspaceProvider } from "#test/helpers/make-workspace";
 import { createMockSession, createSubagentSessionStub, emitResumeUsageAndCompaction, toAgentSession, toSubagentSession } from "#test/helpers/mock-session";
@@ -588,6 +589,67 @@ describe("Subagent — releaseSession", () => {
 		const record = makeSubagent();
 		await expect(record.releaseSession()).resolves.toBeUndefined();
 		expect(record.sessionReleased).toBe(false);
+	});
+});
+
+describe("Subagent — model and thinking level", () => {
+	const sonnet = { provider: "anthropic", id: "claude-sonnet-5" };
+
+	function withLiveSession(execution?: SubagentExecution) {
+		const record = makeSubagent({ execution });
+		const session = createMockSession();
+		session.model = sonnet;
+		session.thinkingLevel = "high";
+		record.subagentSession = toSubagentSession(createSubagentSessionStub(session, "/path/to/session.jsonl"));
+		return { record, session };
+	}
+
+	describe("from the live session", () => {
+		it("reports the model the child is running, over the spawn override", () => {
+			const { record } = withLiveSession(makeStubExecution({ model: makeModel({ provider: "openai", id: "gpt-6" }) }));
+			expect(record.model).toBe(sonnet);
+		});
+
+		it("follows a model the child switches to mid-run", () => {
+			const { record, session } = withLiveSession();
+			const fallback = { provider: "openai", id: "gpt-6" };
+			session.model = fallback;
+			expect(record.model).toBe(fallback);
+		});
+
+		it("reports the child's thinking level, over the spawn override", () => {
+			const { record } = withLiveSession(makeStubExecution({ thinkingLevel: "low" }));
+			expect(record.thinkingLevel).toBe("high");
+		});
+	});
+
+	describe("after the session is released", () => {
+		it("retains the model the child last ran", async () => {
+			const { record } = withLiveSession();
+			await record.releaseSession();
+			expect(record.model).toBe(sonnet);
+		});
+
+		it("retains the child's last thinking level", async () => {
+			const { record } = withLiveSession();
+			await record.releaseSession();
+			expect(record.thinkingLevel).toBe("high");
+		});
+	});
+
+	describe("before a session exists", () => {
+		it("reports the spawn override", () => {
+			const opus = makeModel({ provider: "anthropic", id: "claude-opus-5" });
+			const record = makeSubagent({ execution: makeStubExecution({ model: opus, thinkingLevel: "medium" }) });
+			expect(record.model).toBe(opus);
+			expect(record.thinkingLevel).toBe("medium");
+		});
+
+		it("reports nothing for an inherited model and level", () => {
+			const record = makeSubagent();
+			expect(record.model).toBeUndefined();
+			expect(record.thinkingLevel).toBeUndefined();
+		});
 	});
 });
 
@@ -1398,16 +1460,16 @@ describe("Subagent.scheduleVia() — eager promise capture", () => {
 });
 
 describe("Subagent.waitUntilSettled()", () => {
-	it("resolves immediately for an agent that has no run handle", async () => {
+	it("resolves immediately, unsettled, for an agent that has no run handle", async () => {
 		const agent = makeSubagent({ status: "queued" });
-		await expect(agent.waitUntilSettled(new AbortController().signal)).resolves.toBeUndefined();
+		await expect(agent.waitUntilSettled(new AbortController().signal)).resolves.toEqual({ kind: "unsettled" });
 	});
 
 	it("resolves immediately for an agent that already left the active set", async () => {
 		const agent = makeSubagent({ status: "completed", result: "done", startedAt: 1, completedAt: 2 });
 		agent.start();
 		await agent.promise;
-		await expect(agent.waitUntilSettled(new AbortController().signal)).resolves.toBeUndefined();
+		await expect(agent.waitUntilSettled(new AbortController().signal)).resolves.toEqual({ kind: "settled" });
 	});
 
 	it("spans the queue slot and the run that follows it", async () => {
@@ -1420,8 +1482,8 @@ describe("Subagent.waitUntilSettled()", () => {
 
 		const wait = agent.waitUntilSettled(new AbortController().signal);
 		openSlot();
-		await wait;
 
+		await expect(wait).resolves.toEqual({ kind: "settled" });
 		expect(agent.status).toBe("completed");
 	});
 
@@ -1436,7 +1498,7 @@ describe("Subagent.waitUntilSettled()", () => {
 
 		const wait = agent.waitUntilSettled(controller.signal);
 		controller.abort();
-		await wait;
+		await expect(wait).resolves.toEqual({ kind: "unsettled" });
 
 		// Interrupting the query must not cancel the work: the agent is still
 		// queued and still runs once its slot opens.
@@ -1450,9 +1512,33 @@ describe("Subagent.waitUntilSettled()", () => {
 		const agent = makeSubagent({ status: "queued" });
 		agent.scheduleVia(() => new Promise<never>(() => {}));
 
-		await agent.waitUntilSettled(AbortSignal.abort());
+		await expect(agent.waitUntilSettled(AbortSignal.abort())).resolves.toEqual({ kind: "unsettled" });
 
 		expect(agent.status).toBe("queued");
+	});
+
+	it("reports the waited run's outcome when a resume replaced it before the wait returned", async () => {
+		const stub = createSubagentSessionStub();
+		stub.runTurnLoop.mockResolvedValue({ responseText: "first result", aborted: false, steered: false });
+		const resumed = Promise.withResolvers<string>();
+		stub.resumeTurnLoop.mockReturnValue(resumed.promise);
+		const agent = makeSubagent({
+			status: "running",
+			execution: makeStubExecution({
+				createSubagentSession: async () => toSubagentSession(stub),
+				// Resumes the moment the run settles, before the waiter continues.
+				observer: { onRunFinished: (a) => { void a.resume("continue"); } },
+			}),
+		});
+		agent.start();
+
+		const wait = await agent.waitUntilSettled(new AbortController().signal);
+
+		expect(wait.kind).toBe("superseded");
+		expect(wait.kind === "superseded" ? [wait.outcome.status, wait.outcome.result] : undefined)
+			.toEqual(["completed", "first result"]);
+		resumed.resolve("second");
+		await agent.promise;
 	});
 });
 

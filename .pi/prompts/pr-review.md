@@ -31,9 +31,9 @@ Stop after recording the decision and handing off; do not start implementation h
 5. Note the PR's base commit (`gh pr view $1 --json baseRefOid`) — every "does this defect exist" question below is asked against **current `main`**, not against the PR's narrative.
 6. Establish whether the defect can reach **us**.
    Check the `@gotgenes/*` extensions this repo actually runs under — including ones outside this monorepo, such as `pi-anthropic-auth` — for something that already mitigates it.
-   A defect we are immune to is still real; its priority and its owner are not the same (Refs #883).
+   A defect we are immune to is still real; its priority and its owner are not the same.
 
-A fork PR's `statusCheckRollup` is often **empty**, for two indistinguishable reasons: the run awaits maintainer approval, or it has not been created yet (~4 minutes on a fork-branch push in #959).
+A fork PR's `statusCheckRollup` is often **empty**, for two indistinguishable reasons: the run awaits maintainer approval, or it has not been created yet (~4 minutes on a fork-branch push).
 Absent checks mean *not run*, never *passed*; do not read `mergeable`/`mergeStateStatus` as evidence of a green build.
 Tell them apart with `gh api "repos/gotgenes/pi-packages/actions/runs?head_sha=<sha>" --jq .total_count`: `0` is not-yet-created, and an `action_required` run needs `gh api -X POST repos/gotgenes/pi-packages/actions/runs/<id>/approve`.
 Call `ci_find` with `timeout: 300` on a fork PR, not the 120 s default.
@@ -61,11 +61,11 @@ Establish the problem is real **on current `main`** before you read the diff for
    Narrowing, truncating, or short-circuiting a path that is already correct is a regression wearing a fix's clothing — weigh that against the claimed benefit.
 5. **Verify any alternative you propose.**
    An evaluation that names a better seam is a claim about code you have not run.
-   Hold it to the same standard as the defect: confirm the alternative's call order and available data in the compiled source before recommending it (Refs #696).
+   Hold it to the same standard as the defect: confirm the alternative's call order and available data in the compiled source before recommending it.
 6. **Read the downstream consumer.**
    When the report names another project as the failure path — a provider, a bridge, a host harness — read that project before judging the diff: `fetch_content` its repo, then its `docs/`/`diag/` and the module the report blames.
    Ask there the same question item 2 asks here: is it already fixed, and does the reporter's version have it?
-   `pnpm view <pkg> dist.tarball` fetches what they actually ran (Refs #883).
+   `pnpm view <pkg> dist.tarball` fetches what they actually ran.
 
 Record the outcome of this gate in the evaluation, with the commands and results that back it.
 If the defect is unconfirmed, the `ask-user` decision gate below should offer "ask the reporter for version + fresh repro" as a direction.

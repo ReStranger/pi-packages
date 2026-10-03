@@ -44,7 +44,6 @@ Check whether prior sessions have already done work on this issue:
 1. Extract the issue number from the plan filename (pattern `NNNN-`) or its frontmatter `issue:` field.
 2. Search for an existing retro file: look for `packages/*/docs/retro/NNNN-*.md` and `docs/retro/NNNN-*.md` matching the issue number.
 3. If a retro file exists, read it.
-   Prior stage entries contain summaries and observations from earlier sessions (e.g., planning decisions, risks identified, alternatives rejected).
 4. Use this context to inform your work — it may contain warnings about edge cases, decisions that were already debated, or friction points to avoid repeating.
 
 ## Load skills
@@ -96,7 +95,7 @@ If a step uncovers a problem the plan didn't anticipate, fix it as part of the s
 If the deviation is large, stop and ask.
 
 Before a decision record narrows or replaces a published contract (an event payload, a wire format, a service method), list that contract's current fields and their stability guarantees.
-A field the record never mentions is a field an implementer drops (Refs #737).
+A field the record never mentions is a field an implementer drops.
 
 ## Filing an issue mid-implementation
 
@@ -113,7 +112,7 @@ The skill exits at its first step when no phase is open, and recording a disposi
 3. Run the linter one final time: `pnpm run lint`.
    Commit any fixup as `style:` if you haven't pushed yet.
 4. If `packages/<PKG>/docs/architecture/` exists and the issue completes a roadmap step, prefix `✅` on both the step heading and its Mermaid diagram node — a `Landed:` detail line is not a substitute for the `✅`; flip the phase status row only when every step in the phase is done; commit as `docs:`.
-   Confirm both landed before committing: `grep -cE '✅.*#<N>\b' <arch-doc>` must report 2 — no lint gate sees a missing `✅` (Refs #872).
+   Confirm both landed before committing: `grep -cE '✅.*#<N>\b' <arch-doc>` must report 2 — no lint gate sees a missing `✅`.
    Key it on the issue number, not the step's ordinal: the heading and the node both carry `#<N>` whether the phase identifies its steps by ordinal or by issue.
 5. **Do not edit `CHANGELOG.md`** — the release workflow owns it and will generate entries from your Conventional Commit messages on the next release.
 

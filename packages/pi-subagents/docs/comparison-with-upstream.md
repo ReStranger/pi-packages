@@ -11,13 +11,13 @@ Versions compared: `@gotgenes/pi-subagents` 16.2.1 and `@tintinweb/pi-subagents`
 
 ## At a glance
 
-| Aspect          | @gotgenes/pi-subagents          | @tintinweb/pi-subagents                 |
-| --------------- | ------------------------------- | --------------------------------------- |
-| Philosophy      | Minimal, composable core        | Batteries-included, all-in-one          |
-| Pi peer scope   | `@earendil-works/pi-*` (>=0.75) | `@earendil-works/pi-*` (>=0.74)         |
-| Spawn tool name | `subagent`                      | `Agent`                                 |
-| Runtime deps    | `@sinclair/typebox`             | `@sinclair/typebox`, `croner`, `nanoid` |
-| License         | MIT                             | MIT                                     |
+| Aspect          | @gotgenes/pi-subagents           | @tintinweb/pi-subagents                 |
+| --------------- | -------------------------------- | --------------------------------------- |
+| Philosophy      | Minimal, composable core         | Batteries-included, all-in-one          |
+| Pi peer scope   | `@earendil-works/pi-*` (>=1.0.0) | `@earendil-works/pi-*` (>=0.74)         |
+| Spawn tool name | `subagent`                       | `Agent`                                 |
+| Runtime deps    | none (`typebox` is a Pi peer)    | `@sinclair/typebox`, `croner`, `nanoid` |
+| License         | MIT                              | MIT                                     |
 
 Both ship TypeScript source directly (Pi runs `./src/index.ts`) and target the same `@earendil-works/pi-*` Pi.
 The peer-dep migration that prompted the original fork has since landed upstream, so the Pi scope is no longer a differentiator.

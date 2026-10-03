@@ -46,6 +46,8 @@ export interface GetResultDetails {
 	/** Whether the conversation was requested, so the expanded view can say where it went. */
 	verbose: boolean;
 	transcriptPath?: string;
+	/** The model's `provider/id`; optional because details persisted by older versions lack it. */
+	modelName?: string;
 }
 
 /**
@@ -99,13 +101,14 @@ function renderOverflowNotice(details: GetResultDetails, dropped: number): strin
 }
 
 /** The dim continuation line beneath the status line. */
-function subLine(text: string, color: string, theme: Theme): string {
+function subLine(text: string, color: Parameters<Theme["fg"]>[0], theme: Theme): string {
 	return theme.fg(color, `  ${GLYPHS.subLine}  ${text}`);
 }
 
-/** Build the stats string: "Explore · 44 tool uses · 95.9k token · 9% · ⇊3 · 213.0s". */
+/** Build the stats string: "Explore · anthropic/claude-haiku-4-5 · 44 tool uses · 95.9k token · 9% · ⇊3 · 213.0s". */
 function renderStats(details: GetResultDetails, theme: Theme): string {
 	const parts = [details.displayName];
+	if (details.modelName) parts.push(details.modelName);
 	if (details.toolUses > 0) {
 		parts.push(`${details.toolUses} tool use${details.toolUses === 1 ? "" : "s"}`);
 	}

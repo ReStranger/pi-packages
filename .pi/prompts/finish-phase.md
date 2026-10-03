@@ -1,5 +1,5 @@
 ---
-model: anthropic/claude-sonnet-5
+model: anthropic/claude-sonnet-5-5
 description: Verify the current improvement phase is complete, update docs, and archive its roadmap to history/
 ---
 
@@ -87,7 +87,7 @@ The `roadmap-fit` skill dispositions these at filing time; this is the net for t
    Issues sharing a verdict share one bullet, matching the list's existing convention (`Feature issues [#736], [#720], … — out of scope for a structural phase`).
 5. Append the agreed entries — and their `[#N]:` link definitions — to the dispositions list **before** Step 5 archives the roadmap; an entry added after the move lands in the wrong file.
 
-Expect a non-trivial residual: against pi-permission-system Phase 13's window the query returned 15 issues, 7 of them already stepped or dispositioned.
+Expect a non-trivial residual.
 The survivors mix genuine phase-born work with ordinary tracker noise, and the grouped bullet is what keeps the pass bounded.
 
 ### Check the roadmap's published inputs before it is archived
@@ -140,7 +140,7 @@ Do not copy a doc metric forward — recompute it:
   Test counts come from `pnpm --filter @gotgenes/$1 run test`.
 - If a doc metric carries a mid-phase label ("as of Step N", "Phase N Step M", "as of [#N]"), replace it with the end-of-phase value and drop the label — the archived doc should read as the settled post-phase baseline, not a snapshot.
 - When the phase findings table records a recompute command for a target metric (a `grep -c`, `wc -l`, or fallow field), run it and record predicted vs. delivered in the history file's health-metrics table (a "delivered" column) and summarise it in the reconciliation commit body.
-  Report misses honestly — they are retro input for the next planning round, not something to paper over (the Phase 8 precedent: "fallow refactoring targets did not clear to 0" was recorded verbatim).
+  Report misses honestly — they are retro input for the next planning round, not something to paper over.
 
 ### Stop versus fix
 
@@ -148,21 +148,19 @@ Stale counts, files missing from the layout tree, and mid-phase labels are **exp
 Stop and report **only** when a documented `Outcome:` / `Landed:` claim is contradicted by the code: a symbol that should be gone still exists, a field documented as "mandatory" is still optional, a module said to be removed is still present.
 That is an outcome failure — do not paper over it in the archive.
 A **numeric threshold** named in an `Outcome:` line (a cyclomatic ≤ N, a LOC target, a clone-group count) that the delivered code misses — while the structural change the outcome describes *did* land (the mutation loop is gone, the field is dropped, the module is removed) — is a **metric miss, not a stop**: record predicted-vs-delivered in the history file's health table and continue.
-Stop only when the structural claim itself is false, not when a target number came in short (the Phase 20 precedent: `createTestSubagent` landed at 13 cyclomatic against an `Outcome:` of ≤ 8, but the mutation loops it named were genuinely gone — recorded as a miss, archived normally).
+Stop only when the structural claim itself is false, not when a target number came in short.
 
 ## Step 4: Bounded doc hygiene (change-scoped)
 
 Before archiving, do a bounded hygiene pass over the regions this phase **already touched** — the modules the phase changed and the target prose the phase delivered against.
 This is not a full-doc rewrite: mirror the tidy-first "only touch what the change touches" discipline, and leave unrelated doc regions alone.
-Without this pass, every phase close re-inflates the document and the read cost `/plan-improvements` Step 1 pays keeps climbing (Refs #601, #605).
+Without this pass, every phase close re-inflates the document and the read cost `/plan-improvements` Step 1 pays keeps climbing.
 
 1. No completion summary on archive — two tiers only.
    An archived phase gets exactly two representations: the **"Refactoring history" table row** (title + history link) and the **`history/phase-N-*.md`** file that carries the full narrative.
    Do **not** write a `## Phase N (complete)` / `## Improvement roadmap — Phase N (complete)` prose summary in `architecture.md`, and do **not** write a `### Phase N` prose paragraph under "Refactoring history".
-   Both are the near-verbatim third copy that #601 and #605 deleted; the completion-summary tier itself was retired because each `history/phase-N-*.md` already opens with the same abstract and the table row indexes it.
    Step 5.2 deletes the whole roadmap section outright — the table row is the only thing about the phase that stays in `architecture.md`.
 2. Strip provenance from touched module-tree entries.
-   For each module-tree entry the phase changed, reduce it to what the module is **now**; cite an issue only when the ref encodes an active constraint (a lint-guarded boundary, an ADR string boundary, a structural invariant), never as a provenance trail ("relocated #559, dissolved #505, renamed #510…"), which belongs in git log and `history/`.
    This is the shared architecture-doc convention in the `markdown-conventions` skill (`## Architecture docs`); hold every touched module-tree entry to it.
 3. Re-frame delivered `Target:`/pending prose.
    Where the phase's delivered outcomes have made a `**Target:**` or otherwise-pending passage current state, re-frame it as current — but only for prose the phase actually delivered against.
@@ -194,7 +192,7 @@ Do not impose a new format, and per Step 4 do **not** add a completion-summary p
 
 1. Run `pnpm run lint` (or at least the markdown lint) to confirm the documents are clean — fix any `rumdl`/MD0xx findings.
 2. Confirm the move is loss-free with deterministic checks against the history file rather than eyeballing.
-   Do **not** hardcode `^### Step` — the step heading shape varies by `✅` prefix, by heading level on promotion, and by **identity scheme**: phases planned before issue identity carry an ordinal (`#### ✅ Step 15: Title ([#878])`) while later ones carry the issue (`#### ✅ [#878] Title`), and the two live phases will archive under ordinals.
+   Do **not** hardcode `^### Step` — the step heading shape varies by `✅` prefix, by heading level on promotion, and by **identity scheme**: phases planned before issue identity carry an ordinal (`#### ✅ Step 15: Title ([#878])`) while later ones carry the issue (`#### ✅ [#878] Title`).
    One regex covers both.
    Detect the actual heading first (`grep -nE '^#+ .*(\bStep [0-9]|\[#[0-9]+\])' …`), then:
    - a tolerant count — `grep -cE '^#+ .*(\bStep [0-9]|\[#[0-9]+\])' …/history/phase-N-<slug>.md` — equals the step count.
@@ -204,7 +202,7 @@ Do not impose a new format, and per Step 4 do **not** add a completion-summary p
    - `architecture.md` no longer contains the phase's roadmap section at all — only its "Refactoring history" table row.
      Confirm nothing was left behind: `grep -nE '^## (Improvement roadmap — Phase N|Phase N \(complete\))' architecture.md` returns nothing, and no step heading for the archived phase survives outside the history file (same dual regex).
    - No dangling inbound anchor links: for any section heading this archive removed or renamed (the archived roadmap section, plus any Step 4 hygiene deletions), grep the package docs for links to its slug — `grep -rn '#<slug>' packages/$1/docs` (e.g. `#phase-N-complete`, `#improvement-roadmap-phase-N`) — and repoint each hit to the history file or the new anchor.
-     `rumdl` does **not** catch cross-file anchor breaks, so a sibling doc's `[label](./architecture.md#phase-N-complete)` renders fine in source but silently 404s on GitHub once the section is gone (this session broke `client-server-opportunities.md`'s `[Phase 18]` link that way).
+     `rumdl` does **not** catch cross-file anchor breaks, so a sibling doc's `[label](./architecture.md#phase-N-complete)` renders fine in source but silently 404s on GitHub once the section is gone.
    - Also confirm the package skill (`.pi/skills/package-$1/SKILL.md`) — note any stale phase-scored numbers it carries (test counts, file/domain counts); flag them in the hand-off but do not necessarily fix them here.
 3. Once checks pass, commit and push automatically:
 

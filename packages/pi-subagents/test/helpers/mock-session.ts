@@ -14,6 +14,10 @@ export interface MockSession {
 	getToolDefinition: Mock<(name: string) => unknown>;
 	hasExtensionHandlers: Mock<(eventType: string) => boolean>;
 	extensionRunner: { emit: Mock<(event: unknown) => Promise<unknown>> };
+	/** The child's current model, as `AgentSession.model` reports it. */
+	model: { provider: string; id: string } | undefined;
+	/** The child's current thinking level, as `AgentSession.thinkingLevel` reports it. */
+	thinkingLevel: string;
 }
 
 /**
@@ -70,6 +74,8 @@ export function createSubagentSessionStub(
 		})),
 		get messages(): readonly unknown[] { return session.messages; },
 		get agentMessages(): readonly unknown[] { return session.messages; },
+		get model(): MockSession["model"] { return session.model; },
+		get thinkingLevel(): string { return session.thinkingLevel; },
 		getToolDefinition: vi.fn((name: string): unknown => session.getToolDefinition(name)),
 	};
 }
@@ -122,6 +128,8 @@ export function createMockSession(overrides: Record<string, unknown> = {}): Mock
 		extensionRunner: {
 			emit: vi.fn((_event: unknown): Promise<unknown> => Promise.resolve(undefined)),
 		},
+		model: undefined,
+		thinkingLevel: "off",
 	};
 
 	return { ...base, ...overrides };

@@ -238,6 +238,29 @@ describe("renderRunningLines", () => {
 	});
 });
 
+describe("model tag", () => {
+	const theme = stubTheme();
+	const model = { provider: "anthropic", id: "claude-sonnet-5" };
+
+	it("follows the running agent's name and mode", () => {
+		const agent = makeAgent({ status: "running", completedAt: undefined, model });
+		const [header] = renderRunningLines(agent, testRegistry, 0, theme);
+		expect(header).toContain("**Agent** [dim:(twin)] [dim:[anthropic/claude-sonnet-5]]  [muted:test task]");
+	});
+
+	it("follows the finished agent's name and mode", () => {
+		const line = renderFinishedLine(makeAgent({ model }), testRegistry, theme);
+		expect(line).toContain("[dim:Agent] [dim:(twin)] [dim:[anthropic/claude-sonnet-5]]  [dim:test task]");
+	});
+
+	it("is absent while the model is unknown", () => {
+		const [header] = renderRunningLines(makeAgent({ status: "running", completedAt: undefined }), testRegistry, 0, theme);
+		const line = renderFinishedLine(makeAgent(), testRegistry, theme);
+		expect(header).toContain("**Agent** [dim:(twin)]  [muted:test task]");
+		expect(line).toContain("[dim:Agent] [dim:(twin)]  [dim:test task]");
+	});
+});
+
 describe("widgetLineBudget", () => {
 	// Pi's differential renderer full-clears the screen when the first changed
 	// line sits above the viewport, so the widget's own height has to leave the

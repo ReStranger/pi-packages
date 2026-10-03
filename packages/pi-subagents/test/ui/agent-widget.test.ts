@@ -4,7 +4,8 @@ import type { Subagent } from "#src/lifecycle/subagent";
 import type { SubagentManager } from "#src/lifecycle/subagent-manager";
 import type { CompactionInfo } from "#src/types";
 import { AgentWidget, assembleWidgetState, type UICtx } from "#src/ui/agent-widget";
-import { createTestSubagent } from "#test/helpers/make-subagent";
+import { makeModel } from "#test/helpers/make-model";
+import { createTestSubagent, makeStubExecution } from "#test/helpers/make-subagent";
 
 // Minimal agent fixture — only the three fields AgentSummary requires.
 function makeAgent(overrides: { id?: string; status?: string; completedAt?: number } = {}) {
@@ -250,6 +251,30 @@ describe("AgentWidget — projection reads activity off Subagent records", () =>
 		expect(allText).toContain("↻3");
 		// Active tool "read" → "reading…"
 		expect(allText).toContain("reading");
+	});
+
+	it("surfaces the record's model via renderWidget", () => {
+		const record = createTestSubagent({
+			status: "running",
+			completedAt: undefined,
+			startedAt: Date.now() - 100,
+			isBackground: true,
+			execution: makeStubExecution({ model: makeModel({ provider: "anthropic", id: "claude-sonnet-5" }) }),
+		});
+		const manager = { listAgents: () => [record] } as unknown as SubagentManager;
+		const widget = new AgentWidget(manager, new AgentTypeRegistry(() => new Map()));
+
+		let renderFn: ((tui: unknown, theme: unknown) => { render(): string[] }) | undefined;
+		widget.setUICtx({
+			setStatus: () => {},
+			setWidget: (_key, content) => {
+				if (typeof content === "function") renderFn = content as typeof renderFn;
+			},
+		});
+		widget.update();
+
+		expect(renderFn).toBeDefined();
+		expect(renderFn!(stubTui(), stubTheme()).render().join("\n")).toContain("anthropic/claude-sonnet-5");
 	});
 });
 

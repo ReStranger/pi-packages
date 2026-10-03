@@ -8,11 +8,12 @@ import type { SubagentSession } from "#src/lifecycle/subagent-session";
 import type { WorkspaceProvider } from "#src/lifecycle/workspace";
 import { NotificationManager } from "#src/observation/notification";
 import type { RunConfig } from "#src/runtime";
+import { GetResultTool } from "#src/tools/get-result-tool";
 import type { AgentConfig, Subagent } from "#src/types";
 import { makeWorkspace, makeWorkspaceProvider } from "#test/helpers/make-workspace";
 import { createBlockingFactory, createSessionFactory } from "#test/helpers/manager-stubs";
 import { createMockSession, createSubagentSessionStub, emitResumeUsageAndCompaction, toSubagentSession } from "#test/helpers/mock-session";
-import { STUB_SNAPSHOT } from "#test/helpers/stub-ctx";
+import { STUB_CTX, STUB_SNAPSHOT } from "#test/helpers/stub-ctx";
 
 /** Default max concurrent background agents (matches production default). */
 const DEFAULT_MAX_CONCURRENT = 4;
@@ -1601,6 +1602,124 @@ describe("SubagentManager", () => {
         expect(signalled).toBe(true);
         expect(manager.getRecord(id)!.status).toBe("stopped");
       });
+    });
+
+    describe("announcement after an outcome a carrier already delivered", () => {
+      let sendMessage: Mock;
+
+      // A real NotificationManager wired the way SubagentEventsObserver wires it,
+      // with the parent idle, so a resumed outcome nobody claims is sent at once.
+      beforeEach(() => {
+        sendMessage = vi.fn();
+        const notifications = new NotificationManager(sendMessage);
+        const { factory, stub } = createSessionFactory();
+        stub.resumeTurnLoop.mockResolvedValue("second");
+        ({ manager } = createManager({
+          createSubagentSession: factory,
+          observer: { onSubagentResumed: (r) => notifications.sendCompletion(r) },
+        }));
+      });
+
+      it("announces an unclaimed resume of an agent a foreground spawn delivered", async () => {
+        const record = await spawnFg(manager);
+
+        await manager.resume(record.id, "continue");
+
+        expect(sendMessage).toHaveBeenCalledOnce();
+        expect(record.claimed).toBe(false);
+      });
+
+      it("announces an unclaimed resume of an agent a claimed resume delivered", async () => {
+        const record = await spawnFg(manager);
+        await manager.resume(record.id, "first answer", { claimOutcome: true });
+
+        await manager.resume(record.id, "second answer");
+
+        expect(sendMessage).toHaveBeenCalledOnce();
+      });
+
+      it("announces nothing for a claimed resume that starts while a waiter is waking", async () => {
+        const sendMessage = vi.fn();
+        const notifications = new NotificationManager(sendMessage);
+        const { factory, stub } = createSessionFactory();
+        const resumed = Promise.withResolvers<string>();
+        stub.resumeTurnLoop.mockReturnValue(resumed.promise);
+        let resumeOutcome: Promise<unknown> | undefined;
+        ({ manager } = createManager({
+          createSubagentSession: factory,
+          observer: {
+            // A consumer that resumes the moment the run settles, as a
+            // subagents:completed handler can, before the waiter wakes.
+            onSubagentCompleted: (r) => {
+              notifications.sendCompletion(r);
+              resumeOutcome = manager.resume(r.id, "continue", { claimOutcome: true });
+            },
+            onSubagentResumed: (r) => notifications.sendCompletion(r),
+          },
+        }));
+        const id = spawnBg(manager);
+        const waiter = new GetResultTool(manager, defaultRegistry());
+
+        await waiter.execute("tc-1", { agent_id: id, wait: true }, new AbortController().signal, undefined, STUB_CTX);
+        resumed.resolve("second");
+        await resumeOutcome;
+
+        // The resumer receives the outcome; nothing announces it a second time.
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+
+      it("still announces nothing for a claimed resume", async () => {
+        const record = await spawnFg(manager);
+
+        await manager.resume(record.id, "continue", { claimOutcome: true });
+
+        expect(sendMessage).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe("startResume", () => {
+    let manager: SubagentManager;
+
+    afterEach(async () => {
+      await manager.dispose();
+    });
+
+    it("returns the record already running the resume, before the resumed run settles", async () => {
+      const { factory, stub } = createSessionFactory();
+      ({ manager } = createManager({ createSubagentSession: factory }));
+      const id = spawnBg(manager);
+      const record = manager.getRecord(id)!;
+      await record.promise;
+      const gate = Promise.withResolvers<string>();
+      stub.resumeTurnLoop.mockReturnValue(gate.promise);
+
+      const start = manager.startResume(id, "continue");
+
+      expect(start).toEqual({ kind: "started", record });
+      expect(record.status).toBe("running");
+      gate.resolve("second");
+      await record.promise;
+      expect(record.status).toBe("completed");
+    });
+
+    it("refuses an id no record answers to", () => {
+      ({ manager } = createManager());
+
+      expect(manager.startResume("nope", "continue")).toEqual({ kind: "refused", reason: "unknown-agent" });
+    });
+
+    it("refuses a run that has not settled, starting no turn loop", async () => {
+      const { factory, stub } = createSessionFactory();
+      // The session exists and its first run is still in flight, so only the
+      // refusal stands between this call and a second turn loop.
+      stub.runTurnLoop.mockReturnValue(new Promise(() => {}));
+      ({ manager } = createManager({ createSubagentSession: factory }));
+      const id = spawnBg(manager);
+      await vi.waitFor(() => expect(stub.runTurnLoop).toHaveBeenCalled());
+
+      expect(manager.startResume(id, "continue")).toEqual({ kind: "refused", reason: "still-running" });
+      expect(stub.resumeTurnLoop).not.toHaveBeenCalled();
     });
   });
 });

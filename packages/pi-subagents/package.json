@@ -1,6 +1,6 @@
 {
   "name": "@restranger/pi-subagents",
-  "version": "21.7.7",
+  "version": "22.0.0",
   "type": "module",
   "exports": {
     ".": {
@@ -50,12 +50,10 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.75.0",
-    "@earendil-works/pi-coding-agent": ">=0.81.0",
-    "@earendil-works/pi-tui": ">=0.75.0"
-  },
-  "dependencies": {
-    "@sinclair/typebox": "^0.34.49"
+    "@earendil-works/pi-ai": ">=1.0.0",
+    "@earendil-works/pi-coding-agent": ">=1.0.0",
+    "@earendil-works/pi-tui": ">=1.0.0",
+    "typebox": "*"
   },
   "engines": {
     "node": ">=22"
@@ -72,13 +70,14 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@earendil-works/pi-ai": "0.84.4",
-    "@earendil-works/pi-coding-agent": "0.84.4",
-    "@earendil-works/pi-tui": "0.84.4",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
     "@types/node": "catalog:",
     "rollup": "catalog:",
     "rollup-plugin-dts": "catalog:",
     "rumdl": "catalog:",
+    "typebox": "^1.3.7",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

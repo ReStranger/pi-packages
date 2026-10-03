@@ -1,9 +1,10 @@
 import { getMarkdownTheme, initTheme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentTypeRegistry } from "#src/config/agent-types";
 import type { SessionMessage } from "#src/types";
-import type { TranscriptSource } from "#src/ui/session-navigation";
+import type { EntryHeading, SessionModel, TranscriptSource } from "#src/ui/session-navigation";
 import { SessionNavigatorHandler, TranscriptPane } from "#src/ui/session-navigator";
 import { makeNavigable } from "#test/helpers/make-navigable";
 import { fakeSource, mockTui } from "#test/helpers/transcript-fixtures";
@@ -14,23 +15,37 @@ const registry = new AgentTypeRegistry(() => new Map());
 // at startup before any command runs. Tests must initialize it explicitly.
 beforeAll(() => initTheme(undefined, false));
 
+/** One SGR colour per thinking level, so a test can tell which level painted a rule. */
+const LEVEL_CODES: Record<string, number> = { off: 0, minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, max: 6 };
+const levelColour = (level: string): string => `\x1b[38;5;${LEVEL_CODES[level] ?? 9}m`;
+const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*m/g, "");
+
+/** Plain-text theme; the thinking-border painter wraps in zero-width SGR codes. */
 function ansiTheme() {
   return {
     fg: (_color: string, text: string) => text,
     bold: (text: string) => text,
+    getThinkingBorderColor: (level: string) => (text: string) => `${levelColour(level)}${text}\x1b[39m`,
   };
 }
 
-function makePane(opts: { source?: TranscriptSource; done?: (r: undefined) => void; tui?: TUI } = {}) {
+const DEFAULT_HEADING: EntryHeading = { name: "Explore", modeLabel: undefined, description: "Find auth files" };
+
+function makePane(
+  opts: { source?: TranscriptSource; done?: (r: undefined) => void; tui?: TUI; heading?: EntryHeading } = {},
+) {
   return new TranscriptPane({
     tui: opts.tui ?? mockTui(),
     theme: ansiTheme(),
     source: opts.source ?? fakeSource(),
+    heading: opts.heading ?? DEFAULT_HEADING,
     done: opts.done ?? vi.fn(),
     cwd: "/test/cwd",
     markdownTheme: getMarkdownTheme(),
   });
 }
+
+const SONNET_HIGH: SessionModel = { model: { provider: "anthropic", id: "claude-sonnet-5" }, thinkingLevel: "high" };
 
 describe("TranscriptPane", () => {
   it("renders the transcript content", () => {
@@ -95,9 +110,19 @@ describe("TranscriptPane", () => {
       { role: "user", content: Array.from({ length: 80 }, (_, i) => `r${String(i).padStart(3, "0")}`).join("\n") },
     ] as unknown as SessionMessage[];
 
-    it("paints no box-drawing glyphs", () => {
-      const out = makePane().render(80).join("\n");
-      expect(out).not.toMatch(/[╭╮╰╯│─]/);
+    it("paints no frame: no corners or side borders, and rules only on the first and last rows", () => {
+      const lines = makePane().render(80);
+      expect(lines.join("\n")).not.toMatch(/[╭╮╰╯│]/);
+      const ruled = lines.flatMap((line, i) => (line.includes("─") ? [i] : []));
+      expect(ruled).toEqual([0, lines.length - 1]);
+    });
+
+    it("never paints a row wider than it was given", () => {
+      const source = fakeSource({ sessionModel: () => SONNET_HIGH });
+      for (const width of [6, 20, 57, 80]) {
+        const pane = makePane({ source, heading: { name: "Agent", modeLabel: "twin", description: "Refactor the auth module" } });
+        for (const line of pane.render(width)) expect(visibleWidth(line), `width ${width}`).toBeLessThanOrEqual(width);
+      }
     });
 
     it("spends only two rows on chrome, leaving the rest to the transcript", () => {
@@ -110,6 +135,67 @@ describe("TranscriptPane", () => {
       });
       const shown = pane.render(80).filter((line) => /r\d{3}/.test(line)).length;
       expect(shown).toBe(25);
+    });
+  });
+
+  describe("header rule", () => {
+    const heading: EntryHeading = { name: "Agent", modeLabel: "twin", description: "Refactor auth" };
+    const headerAt = (width: number, sessionModel: SessionModel = SONNET_HIGH): string =>
+      stripAnsi(makePane({ heading, source: fakeSource({ sessionModel: () => sessionModel }) }).render(width)[0] ?? "");
+
+    it("names the agent, its mode, its task, its model, and its thinking level", () => {
+      expect(headerAt(80)).toBe(`── Agent (twin)  Refactor auth · anthropic/claude-sonnet-5 • high ${"─".repeat(14)}`);
+    });
+
+    it("says 'thinking off' rather than a bare 'off'", () => {
+      expect(headerAt(80, { ...SONNET_HIGH, thinkingLevel: "off" })).toContain("anthropic/claude-sonnet-5 • thinking off");
+    });
+
+    it("names the thinking level on its own when the model is unknown", () => {
+      expect(headerAt(80, { model: undefined, thinkingLevel: "high" })).toContain("Refactor auth · thinking high");
+    });
+
+    it("drops the task first as the width shrinks", () => {
+      expect(headerAt(55)).toBe(`── Agent (twin) · anthropic/claude-sonnet-5 • high ${"─".repeat(4)}`);
+    });
+
+    it("drops the model next, keeping the agent's name", () => {
+      expect(headerAt(30)).toBe(`── Agent (twin) ${"─".repeat(14)}`);
+    });
+  });
+
+  describe("rule colour", () => {
+    it("paints both rules for the child's thinking level", () => {
+      const lines = makePane({ source: fakeSource({ sessionModel: () => SONNET_HIGH }) }).render(80);
+      expect(lines[0]?.startsWith(`${levelColour("high")}── `)).toBe(true);
+      expect(lines.at(-1)?.startsWith(`${levelColour("high")}── `)).toBe(true);
+    });
+
+    it("repaints when the child's thinking level changes", () => {
+      let current: SessionModel = SONNET_HIGH;
+      const pane = makePane({ source: fakeSource({ sessionModel: () => current }) });
+      pane.render(80);
+      current = { ...SONNET_HIGH, thinkingLevel: "low" };
+      expect(pane.render(80)[0]?.startsWith(levelColour("low"))).toBe(true);
+    });
+
+    it("paints an unknown level as 'off'", () => {
+      const lines = makePane({ source: fakeSource({ sessionModel: () => ({ model: undefined, thinkingLevel: undefined }) }) }).render(80);
+      expect(lines[0]?.startsWith(levelColour("off"))).toBe(true);
+    });
+  });
+
+  describe("footer rule", () => {
+    const footerAt = (width: number): string => stripAnsi(makePane().render(width).at(-1) ?? "");
+
+    it("carries the scroll position on the left and the key hints on the right", () => {
+      const footer = footerAt(80);
+      expect(footer.startsWith("── 3 lines · 100% ─")).toBe(true);
+      expect(footer.endsWith(" ↑↓ scroll · PgUp/PgDn · Esc close ──")).toBe(true);
+    });
+
+    it("drops the key hints, keeping the position, when both do not fit", () => {
+      expect(footerAt(40)).toBe(`── 3 lines · 100% ${"─".repeat(22)}`);
     });
   });
 
@@ -252,6 +338,12 @@ describe("SessionNavigatorHandler", () => {
     expect(record.getToolDefinition).not.toHaveBeenCalled();
     // Invoke the captured component factory and render to confirm it is sourced from the picked record.
     expect(renderCapturedPane(ui).some((l) => l.includes("picked agent reply"))).toBe(true);
+  });
+
+  it("heads the pane with the picked agent's name and task", async () => {
+    const ui = makeUI("Agent (Test task) · 2 tools · completed · 3.0s");
+    await new SessionNavigatorHandler().handle({ ui, agents: [makeNavigable()], registry, cwd: "/test/cwd", readFile: noReadFile });
+    expect(stripAnsi(renderCapturedPane(ui)[0] ?? "").startsWith("── Agent (twin)  Test task ")).toBe(true);
   });
 
   it("mounts the transcript outside Pi's overlay compositor", async () => {

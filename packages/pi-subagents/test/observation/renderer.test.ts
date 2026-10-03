@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import type {
   NotificationDetails,
   UpdateDetails,
@@ -253,6 +254,11 @@ describe("createUpdateRenderer", () => {
     };
   }
 
+  it("accepts only Pi theme color names", () => {
+    type RendererTheme = Parameters<ReturnType<typeof createUpdateRenderer>>[2];
+    expectTypeOf<Parameters<RendererTheme["fg"]>[0]>().toEqualTypeOf<ThemeColor>();
+  });
+
   it("returns undefined when message has no details", () => {
     const renderer = createUpdateRenderer();
     expect(renderer({ details: undefined }, { expanded: false }, stubTheme())).toBeUndefined();
@@ -264,7 +270,7 @@ describe("createUpdateRenderer", () => {
 
     // The completion renderer's vocabulary would say "completed" here, which is
     // the reason this renderer exists.
-    expect(text).toContain("[info:●]");
+    expect(text).toContain("[accent:●]");
     expect(text).toContain("**Test agent**");
     expect(text).toContain("update");
     expect(text).not.toContain("completed");

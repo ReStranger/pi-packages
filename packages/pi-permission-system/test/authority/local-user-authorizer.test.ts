@@ -4,6 +4,7 @@ import { LocalUserAuthorizer } from "#src/authority/local-user-authorizer";
 import type { PermissionPromptDecision } from "#src/authority/permission-dialog";
 import type { requestPermissionDecision } from "#src/authority/permission-prompt-component";
 import type { PromptPermissionDetails } from "#src/authority/permission-prompter";
+import type { NotificationSession } from "#src/presentation/prompt-notification";
 import { DECIDED_BY_HUMAN } from "#test/helpers/decision-fixtures";
 import {
   makePromptDetails,
@@ -73,6 +74,9 @@ function makeDeps(
     requestPermissionDecision?: typeof requestPermissionDecision;
   } = {},
 ) {
+  const describeSession = vi.fn(
+    (): NotificationSession => ({ name: "refactor-auth", cwd: "/w/repo" }),
+  );
   const events = overrides.events ?? makeEvents();
   const dialogs = overrides.dialogs ?? new AskDialogQueue();
   const ui = makePromptUi();
@@ -91,7 +95,9 @@ function makeDeps(
       dialogs,
       getPromptPreferences: () => makePromptPreferences(),
       requestPermissionDecision: decisionFn,
+      describeSession,
     },
+    describeSession,
     events,
     dialogs,
     ui,
@@ -156,11 +162,45 @@ describe("LocalUserAuthorizer", () => {
     await authorizer.authorize(details);
 
     expect(decisionFn).toHaveBeenCalledWith(
-      { mode: "tui", ui, ...makePromptPreferences() },
+      {
+        mode: "tui",
+        ui,
+        ...makePromptPreferences(),
+        notice: {
+          title: "pi \u2014 refactor-auth",
+          body: "Permission Required: read",
+        },
+      },
       "Permission Required",
       details.payload,
       undefined,
     );
+  });
+
+  describe("notification notice", () => {
+    it("reads the session when each prompt opens, not when the authorizer is built", async () => {
+      const { deps, describeSession, decisionFn, ui } = makeDeps();
+      const authorizer = new LocalUserAuthorizer(deps);
+
+      await authorizer.authorize(makeDetails());
+      describeSession.mockReturnValue({ name: "renamed", cwd: "/w/repo" });
+      await authorizer.authorize(makeDetails());
+
+      expect(decisionFn).toHaveBeenLastCalledWith(
+        {
+          mode: "tui",
+          ui,
+          ...makePromptPreferences(),
+          notice: {
+            title: "pi \u2014 renamed",
+            body: "Permission Required: read",
+          },
+        },
+        "Permission Required",
+        expect.anything(),
+        undefined,
+      );
+    });
   });
 
   it("passes the sessionLabel option when present", async () => {
@@ -177,6 +217,86 @@ describe("LocalUserAuthorizer", () => {
       expect.anything(),
       { sessionLabel: "Yes, for 'read' tool" },
     );
+  });
+
+  describe("session label for a path ask that proves no direction", () => {
+    it("names a bare external_directory directory approval by its contents glob", async () => {
+      const { deps, decisionFn } = makeDeps();
+      const authorizer = new LocalUserAuthorizer(deps);
+
+      await authorizer.authorize(
+        makeDetails({
+          sessionApproval: {
+            grants: [
+              { surface: "external_directory", pattern: "/r/a" },
+              { surface: "external_directory", pattern: "/r/a/*" },
+            ],
+          },
+        }),
+      );
+
+      expect(decisionFn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.anything(),
+        { sessionLabel: 'Yes, allow access to "/r/a/*" for this session' },
+      );
+    });
+
+    it("names a bare path approval by its pattern", async () => {
+      const { deps, decisionFn } = makeDeps();
+      const authorizer = new LocalUserAuthorizer(deps);
+
+      await authorizer.authorize(
+        makeDetails({
+          sessionApproval: { grants: [{ surface: "path", pattern: "/r/*" }] },
+        }),
+      );
+
+      expect(decisionFn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.anything(),
+        { sessionLabel: 'Yes, allow access to "/r/*" for this session' },
+      );
+    });
+
+    it("keeps a gate-supplied label over the fallback", async () => {
+      const { deps, decisionFn } = makeDeps();
+      const authorizer = new LocalUserAuthorizer(deps);
+
+      await authorizer.authorize(
+        makeDetails({
+          sessionLabel: 'Yes, allow edit "/r/*" for this session',
+          sessionApproval: { grants: [{ surface: "path", pattern: "/r/*" }] },
+        }),
+      );
+
+      expect(decisionFn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.anything(),
+        { sessionLabel: 'Yes, allow edit "/r/*" for this session' },
+      );
+    });
+
+    it("adds no label for a grant on a non-path surface", async () => {
+      const { deps, decisionFn } = makeDeps();
+      const authorizer = new LocalUserAuthorizer(deps);
+
+      await authorizer.authorize(
+        makeDetails({
+          sessionApproval: { grants: [{ surface: "bash", pattern: "git *" }] },
+        }),
+      );
+
+      expect(decisionFn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.anything(),
+        undefined,
+      );
+    });
   });
 
   it("emits the UI event before calling requestPermissionDecision", async () => {
@@ -246,8 +366,17 @@ describe("LocalUserAuthorizer", () => {
 
       await authorizer.authorize(details);
 
+      // The notice carries the same forwarded title the dialog does.
       expect(decisionFn).toHaveBeenCalledWith(
-        { mode: "tui", ui, ...makePromptPreferences() },
+        {
+          mode: "tui",
+          ui,
+          ...makePromptPreferences(),
+          notice: {
+            title: "pi \u2014 refactor-auth",
+            body: "Permission Required (Subagent): read",
+          },
+        },
         "Permission Required (Subagent)",
         details.payload,
         undefined,
@@ -391,7 +520,7 @@ describe("LocalUserAuthorizer", () => {
           { surface: "external_directory_read", pattern: "/outside/a/*" },
           { surface: "external_directory_write", pattern: "/outside/b/*" },
         ],
-        undefined,
+        { sessionLabel: "Yes, allow access to 2 paths for this session" },
       );
     });
 

@@ -22,6 +22,7 @@ export function fakeSource(overrides: Partial<TranscriptSource> = {}): Transcrip
     subscribe: () => () => {},
     streaming: () => undefined,
     getToolDefinition: () => undefined,
+    sessionModel: () => ({ model: undefined, thinkingLevel: undefined }),
     ...overrides,
   };
 }

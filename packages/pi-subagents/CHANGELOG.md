@@ -5,6 +5,86 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [22.0.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.9.4...pi-subagents-v22.0.0) (2026-10-03)
+
+
+### Features
+
+* **pi-subagents:** **breaking:** require Pi 1.0.0 or later ([e93ec7c](https://github.com/gotgenes/pi-packages/commit/e93ec7cead9f1a82b7cfc34d0dbadb3dd21125d9)), closes [#1004](https://github.com/gotgenes/pi-packages/issues/1004)
+* **pi-subagents:** load codemode, tool_search, and MCP in a child whose tools: names them ([c9a30d7](https://github.com/gotgenes/pi-packages/commit/c9a30d779fc08f5330f17d67177b28ba3f71a861)), closes [#1006](https://github.com/gotgenes/pi-packages/issues/1006)
+* **pi-subagents:** let tools: name a whole MCP server with mcp__<server>__* ([9f9b0f3](https://github.com/gotgenes/pi-packages/commit/9f9b0f3d3323a1a65eb01089395a8bd155bae457)), closes [#1006](https://github.com/gotgenes/pi-packages/issues/1006)
+
+### Documentation
+
+* **pi-subagents:** document codemode, tool_search, and MCP tools in children ([d8d68c2](https://github.com/gotgenes/pi-packages/commit/d8d68c2b960bfe88d6bd4ff26d93475899f879a7)), closes [#1006](https://github.com/gotgenes/pi-packages/issues/1006)
+* **pi-subagents:** correct the peer scope and MCP details the review flagged ([9dd71ab](https://github.com/gotgenes/pi-packages/commit/9dd71abeb98faf89241fac1d00c7e379c18c4282)), closes [#1006](https://github.com/gotgenes/pi-packages/issues/1006)
+
+## [21.9.4](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.9.3...pi-subagents-v21.9.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* **pi-subagents:** keep a resume's claim when a get_subagent_result wait wakes after it starts ([dae195a](https://github.com/gotgenes/pi-packages/commit/dae195a022a44dbbe3e0b4a93525500809b3a2a4)), closes [#1015](https://github.com/gotgenes/pi-packages/issues/1015)
+* **pi-subagents:** report the run a get_subagent_result wait waited for when a resume starts first ([b10dccd](https://github.com/gotgenes/pi-packages/commit/b10dccd5d00c1d6aa13d1b2980844112aba8d962)), closes [#1015](https://github.com/gotgenes/pi-packages/issues/1015)
+
+## [21.9.3](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.9.2...pi-subagents-v21.9.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **pi-subagents:** announce a resumed agent's outcome even after an earlier carrier delivered it ([dab3c05](https://github.com/gotgenes/pi-packages/commit/dab3c0532316f5a9bee3e84683ef49e49abe4526)), closes [#987](https://github.com/gotgenes/pi-packages/issues/987)
+* **pi-subagents:** resume a subagent in the background when the call asks for run_in_background ([0681086](https://github.com/gotgenes/pi-packages/commit/06810861c55ca0107c5f9cfa917d813ee264be0f)), closes [#987](https://github.com/gotgenes/pi-packages/issues/987)
+
+### Documentation
+
+* **pi-subagents:** document background resume ([3b0a702](https://github.com/gotgenes/pi-packages/commit/3b0a70217995ae35f6c36c11fc74e25ced826386)), closes [#987](https://github.com/gotgenes/pi-packages/issues/987)
+
+## [21.9.2](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.9.1...pi-subagents-v21.9.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **pi-subagents:** render notify_parent updates with the subagent renderer instead of Pi's fallback box ([#1008](https://github.com/gotgenes/pi-packages/issues/1008)) ([35ac9e7](https://github.com/gotgenes/pi-packages/commit/35ac9e7f9d2b535609f7f403be75edec78ecd6d5)), closes [#1008](https://github.com/gotgenes/pi-packages/issues/1008)
+
+## [21.9.1](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.9.0...pi-subagents-v21.9.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **pi-subagents:** stop children inheriting the parent's tool list and rules ([6a1fa48](https://github.com/gotgenes/pi-packages/commit/6a1fa48d1104978cd4addc57c17db35e7679b46f)), closes [#1009](https://github.com/gotgenes/pi-packages/issues/1009)
+
+### Documentation
+
+* **pi-subagents:** record that a child never inherits Pi's tool surface ([e4e564d](https://github.com/gotgenes/pi-packages/commit/e4e564da2a3daad6abca431048088910915392e0)), closes [#1009](https://github.com/gotgenes/pi-packages/issues/1009)
+
+## [21.9.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.8.1...pi-subagents-v21.9.0) (2026-10-01)
+
+
+### Features
+
+* **pi-subagents:** always show the subagent's model as provider/id on the Agent tool's stats line ([67e9c3c](https://github.com/gotgenes/pi-packages/commit/67e9c3c79c3f34be6bf3a7a6171fc3ed9de474f2)), closes [#755](https://github.com/gotgenes/pi-packages/issues/755)
+* **pi-subagents:** show the model a subagent actually runs on in the Agent tool's stats line after a mid-run switch ([443391c](https://github.com/gotgenes/pi-packages/commit/443391c8cfa0c07d0e2cbddd3df2495245208838)), closes [#755](https://github.com/gotgenes/pi-packages/issues/755)
+* **pi-subagents:** name the subagent's model in the get_subagent_result report ([0785f3f](https://github.com/gotgenes/pi-packages/commit/0785f3f1f2b246381b9aa1b4e4a92debdfaf96ac)), closes [#755](https://github.com/gotgenes/pi-packages/issues/755)
+
+## [21.8.1](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.8.0...pi-subagents-v21.8.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **pi-subagents:** stop Pi's host-provided dependency warning at startup ([4525649](https://github.com/gotgenes/pi-packages/commit/4525649b04955788191b8de10af0721bd33a81b3)), closes [#994](https://github.com/gotgenes/pi-packages/issues/994)
+
+## [21.8.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.7.7...pi-subagents-v21.8.0) (2026-09-28)
+
+
+### Features
+
+* **pi-subagents:** show the subagent's name, model, and thinking level in the session viewer's rules ([e2d3a99](https://github.com/gotgenes/pi-packages/commit/e2d3a99bb9df23f97e79e25b034bd32193092dd1)), closes [#876](https://github.com/gotgenes/pi-packages/issues/876)
+* **pi-subagents:** show each background subagent's provider and model in the agents widget ([f1dac93](https://github.com/gotgenes/pi-packages/commit/f1dac932d1f6dc38a9a1da02e908898bc88f606b)), closes [#954](https://github.com/gotgenes/pi-packages/issues/954)
+
+### Documentation
+
+* **pi-subagents:** document the session viewer's rules and the widget's model tag ([289ee43](https://github.com/gotgenes/pi-packages/commit/289ee4393bfd35224873c7800df1826bf7e97ac4)), closes [#876](https://github.com/gotgenes/pi-packages/issues/876)
+
 ## [21.7.7](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.7.6...pi-subagents-v21.7.7) (2026-09-25)
 
 
