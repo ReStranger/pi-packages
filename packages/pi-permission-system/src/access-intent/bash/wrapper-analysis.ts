@@ -9,6 +9,7 @@
  * classifiers over the same vocabulary would drift.
  */
 
+import type { FloorExemption } from "#src/types";
 import { proveCommandEffect } from "./command-effects";
 import type { ArgWord } from "./node-text";
 
@@ -143,9 +144,12 @@ export function executedUnitOf(
 }
 
 /**
- * True when a wrapper unit's floor has no reason left to hold: the command it
- * runs is in the pure-reader core, so its *direction* is provable however
- * unknown its argument feed is (ADR 0013 §11, #803).
+ * Why a wrapper unit's floor has no reason left to hold, or `undefined` when it
+ * still does.
+ *
+ * `"core-reader"`: the command it runs is in the pure-reader core, so its
+ * *direction* is provable however unknown its argument feed is (ADR 0013 §11,
+ * #803).
  *
  * The floor exists because a wrapper hides the command that should be gated,
  * and the unknowability it guards is unknowability of scope — which stays the
@@ -153,7 +157,7 @@ export function executedUnitOf(
  * alike. Argument-independence is the core's admission bar, so there are no
  * arguments that make `grep` write a file.
  *
- * Four things must hold, and each is a way the reason could still hold:
+ * Four things must hold for it, and each is a way the reason could still hold:
  *
  * 1. The unit is an indirection wrapper — an ordinary command has no floor.
  * 2. Unwrapping reached the inner command without passing through an opaque
@@ -165,21 +169,128 @@ export function executedUnitOf(
  *    not transparent.
  * 4. The unit writes no file through a redirect, which the caller reads off
  *    the parse tree and this module never sees.
+ *
+ * `"execution-modifier"`: every wrapper layer only changes *how* the visible
+ * inner command runs, so the unit resolves by that command's own rule whatever
+ * it does (see {@link onlyModifiesExecution}). The first two conditions above
+ * hold for it too; the core-reader reason is preferred when both apply.
  */
-export function isTransparentWrapper(
+export function floorExemptionOf(
   words: readonly CommandWord[],
   statement: { readonly writesViaRedirect: boolean },
-): boolean {
-  if (statement.writesViaRedirect) return false;
-  if (classifyWrapperWords(words) !== "indirection") return false;
+): FloorExemption | undefined {
+  if (classifyWrapperWords(words) !== "indirection") return undefined;
 
   // Only the peeled words matter here, so the walk is handed no source span to
   // cut from — the text slice is `executedUnitOf`'s product, not this one's.
   const unwrapped = unwrapIndirection(words, "");
-  if (unwrapped.kind === "opaque" || unwrapped.layers === 0) return false;
+  if (unwrapped.kind === "opaque" || unwrapped.peeled.length === 0) {
+    return undefined;
+  }
 
   const head = unwrapped.words.at(0)?.text ?? "";
-  return proveCommandEffect(head, unwrapped.words.slice(1)).effect === "read";
+  const provesRead =
+    proveCommandEffect(head, unwrapped.words.slice(1)).effect === "read";
+  if (provesRead && !statement.writesViaRedirect) return "core-reader";
+  return onlyModifiesExecution(unwrapped.peeled, unwrapped.words)
+    ? "execution-modifier"
+    : undefined;
+}
+
+/**
+ * True when every peeled layer only changes *how* the inner command runs, and
+ * that command is a literal name the gate can resolve by its own rule.
+ *
+ * The floor's reason (a wrapper hides the command that should be gated) is
+ * false for an execution modifier whatever the inner command does: every
+ * operand is on the command line, and the wrapper adds no privilege,
+ * environment, or argument feed. So the unit inherits the inner verdict rather
+ * than being classified a read, which is why no redirect refusal applies —
+ * the destination is gated by the path surfaces exactly as for the bare
+ * command.
+ *
+ * Each condition is a way the inherited verdict could name the wrong command:
+ *
+ * 1. Every layer is a modifier. The peel looks through `sudo` and `env` too,
+ *    so `time sudo rm` would otherwise inherit `rm`'s verdict.
+ * 2. Every option in every layer is on that modifier's allowlist. The real
+ *    tools accept abbreviations (`timeout --sig KILL 5 rm`) the inner-command
+ *    search does not know, and one of them misplaces where the command starts.
+ *    Each option, value, and operand must also be literal: the shell splits
+ *    `timeout $D pnpm` or expands `timeout {5,sudo} rm` into extra words before
+ *    the modifier runs, and one of those may be a wrapper or the real command.
+ * 3. The peel ended at an ordinary command, not a wrapper it could not see
+ *    past.
+ * 4. The inner head is a literal command name. The grammar has no `time`
+ *    keyword, so `time { …; }` and `time ( … )` reach here with shell syntax
+ *    where the command name should be.
+ */
+function onlyModifiesExecution(
+  peeled: readonly (readonly CommandWord[])[],
+  inner: readonly CommandWord[],
+): boolean {
+  return (
+    peeled.every(isAdmittedModifierLayer) &&
+    classifyWrapperWords(inner) === undefined &&
+    isLiteralCommandName(inner.at(0)?.text ?? "")
+  );
+}
+
+/**
+ * True when a peeled layer is an execution modifier whose every word before
+ * the inner command is one it admits.
+ *
+ * Walks the words with the same value-taking table {@link innerCommandIndex}
+ * skips by, so an admitted option's value can never be taken for the command.
+ */
+function isAdmittedModifierLayer(layer: readonly CommandWord[]): boolean {
+  const name = wrapperName(layer);
+  const flags =
+    name === undefined ? undefined : EXECUTION_MODIFIER_FLAGS.get(name);
+  if (name === undefined || flags === undefined) return false;
+
+  const valueTaking = admittedValueTaking(name);
+  for (let index = 1; index < layer.length; index++) {
+    const word = layer[index].text;
+    if (isEnvironmentAssignment(word)) continue;
+    // A word the shell rewrites (`$D`, `{5,sudo}`, `*`) may become several, one
+    // of them a wrapper or the real command, so only a literal word is admitted.
+    if (layer[index].computed) return false;
+    if (word === "--") continue;
+    if (!word.startsWith("-")) continue;
+    if (flags.has(word)) continue;
+    if (valueTaking.has(word)) {
+      index++;
+      if (layer[index]?.computed) return false;
+      continue;
+    }
+    if (!hasAttachedValue(word, valueTaking)) return false;
+  }
+  return true;
+}
+
+/** A modifier's value-taking options, less any that write a file. */
+function admittedValueTaking(name: string): ReadonlySet<string> {
+  const valueTaking = VALUE_TAKING_FLAGS.get(name) ?? EMPTY_FLAGS;
+  const writing = WRITING_OPTIONS.get(name) ?? EMPTY_FLAGS;
+  return new Set([...valueTaking].filter((flag) => !writing.has(flag)));
+}
+
+/** `--long=value`, or a short option with its value attached (`-sKILL`). */
+function hasAttachedValue(
+  word: string,
+  valueTaking: ReadonlySet<string>,
+): boolean {
+  if (word.startsWith("--")) {
+    const equals = word.indexOf("=");
+    return equals !== -1 && valueTaking.has(word.slice(0, equals));
+  }
+  return word.length > 2 && valueTaking.has(word.slice(0, 2));
+}
+
+/** A command name spelled literally: no quoting, expansion, or shell syntax. */
+function isLiteralCommandName(text: string): boolean {
+  return LITERAL_COMMAND_NAME.test(text) && !RESERVED_WORDS.has(text);
 }
 
 // ── Unwrapping ───────────────────────────────────────────────────────────────
@@ -200,8 +311,11 @@ type UnwrapResult =
       readonly kind: "peeled";
       readonly text: string;
       readonly words: readonly CommandWord[];
-      /** How many indirection layers came off; `0` means none did. */
-      readonly layers: number;
+      /**
+       * Each peeled layer's words before its inner command: the wrapper name,
+       * its options, and any leading operand. Empty when none came off.
+       */
+      readonly peeled: readonly (readonly CommandWord[])[];
     };
 
 /**
@@ -210,7 +324,7 @@ type UnwrapResult =
  *
  * Stopping early is not an error: the words peeled so far are returned, and
  * each caller decides what an incomplete peel is worth — `executedUnitOf`
- * shows it, {@link isTransparentWrapper} declines it because the head word it
+ * shows it, {@link floorExemptionOf} declines it because the head word it
  * would judge is the wrapper's own.
  *
  * `unitText` is the span the peeled `text` is cut from; a caller that wants
@@ -222,7 +336,7 @@ function unwrapIndirection(
 ): UnwrapResult {
   let text = unitText;
   let current = words;
-  let layers = 0;
+  const peeled: (readonly CommandWord[])[] = [];
 
   for (let depth = 0; depth < MAX_UNWRAP_DEPTH; depth++) {
     const kind = classifyWrapperWords(current);
@@ -238,11 +352,11 @@ function unwrapIndirection(
     if (start === -1 || start >= current.length) break;
     const end = execTerminatorIndex(current, start);
     text = sliceWords(text, current, start, end).trimEnd();
+    peeled.push(current.slice(0, start));
     current = rebase(current, start, end);
-    layers++;
   }
 
-  return { kind: "peeled", text, words: current, layers };
+  return { kind: "peeled", text, words: current, peeled };
 }
 
 /** How many wrapper layers to unwrap before giving up. */
@@ -304,7 +418,11 @@ function innerCommandIndex(words: readonly CommandWord[]): number {
 
   while (index < words.length) {
     const word = words[index].text;
-    if (word === "--") return index + 1;
+    if (word === "--") {
+      // The end of options, not of operands: `timeout -- 5 cmd` still takes
+      // its duration before the command.
+      return operandPending ? index + 2 : index + 1;
+    }
     if (isEnvironmentAssignment(word)) {
       index++;
       continue;
@@ -434,6 +552,78 @@ const VALUE_TAKING_FLAGS = new Map<string, ReadonlySet<string>>([
 ]);
 
 const EMPTY_FLAGS: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Wrappers that change only *how* the same visible command runs — timing, kill
+ * deadline, scheduling, buffering, session — each with the flags (options
+ * taking no value) it admits. Value-taking options are admitted from
+ * {@link VALUE_TAKING_FLAGS}, less {@link WRITING_OPTIONS}, so the two tables
+ * cannot disagree about where the inner command starts. Any other option
+ * refuses the exemption.
+ */
+const EXECUTION_MODIFIER_FLAGS = new Map<string, ReadonlySet<string>>([
+  // BSD `man 1 time`: `time [-al] [-h | -p] [-o file]`; `-p` is also the bash
+  // keyword's only option. `-a` appends to the `-o` file, so it is not listed.
+  ["time", new Set(["-p", "-l", "-h"])],
+  // GNU coreutils `timeout --help`.
+  [
+    "timeout",
+    new Set([
+      "-f",
+      "--foreground",
+      "-p",
+      "--preserve-status",
+      "-v",
+      "--verbose",
+    ]),
+  ],
+  // `nice` and `stdbuf` take only value options; util-linux `setsid`'s flags
+  // are unverified on this host, so none is admitted.
+  ["nice", EMPTY_FLAGS],
+  ["stdbuf", EMPTY_FLAGS],
+  ["setsid", EMPTY_FLAGS],
+]);
+
+/**
+ * Each modifier's value-taking options that write a file, never admitted.
+ * Per wrapper: `time -o` names an output file, while `stdbuf -o` sets a mode.
+ */
+const WRITING_OPTIONS = new Map<string, ReadonlySet<string>>([
+  ["time", new Set(["-o", "--output"])],
+]);
+
+/**
+ * A command name with no quoting, expansion, glob, or grouping character, and
+ * not an option: a name led by `-` is one {@link executedUnitOf} declines to
+ * name, so it could never be resolved.
+ */
+const LITERAL_COMMAND_NAME = /^[A-Za-z0-9_./+@%,:][A-Za-z0-9_./+@%,:-]*$/;
+
+/** Bash reserved words, which open syntax rather than name a command. */
+const RESERVED_WORDS: ReadonlySet<string> = new Set([
+  "!",
+  "{",
+  "}",
+  "[[",
+  "]]",
+  "case",
+  "coproc",
+  "do",
+  "done",
+  "elif",
+  "else",
+  "esac",
+  "fi",
+  "for",
+  "function",
+  "if",
+  "in",
+  "select",
+  "then",
+  "time",
+  "until",
+  "while",
+]);
 
 /**
  * Wrappers whose first bare word is an operand (a duration, a lock file) rather

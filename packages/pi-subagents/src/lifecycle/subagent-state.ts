@@ -3,10 +3,10 @@
  *
  * Owns the passive, readable state of a subagent — status, result, error,
  * timestamps, stats (toolUses, lifetimeUsage, compactionCount), and live-activity
- * fields (turnCount, activeTools, responseText) — together with the transition
+ * fields (activeTools, responseText) and the live turn budget — together with the transition
  * methods (markRunning, markCompleted, …), accumulation methods
  * (incrementToolUses, addUsage, incrementCompactions), and live-activity
- * transition methods (incrementTurnCount, addActiveTool, removeActiveTool,
+ * transition methods (setTurnBudget, addActiveTool, removeActiveTool,
  * resetResponseText, appendResponseText) that mutate them.
  *
  * State is encapsulated behind getters; external code reads through them but
@@ -18,6 +18,7 @@
  * session-event observer be unit-tested without constructing an executor.
  */
 
+import type { TurnBudget } from "#src/lifecycle/turn-limits";
 import type { LifetimeUsage } from "#src/lifecycle/usage";
 import { addUsage } from "#src/lifecycle/usage";
 
@@ -25,7 +26,6 @@ export type SubagentStatus =
 	| "queued"
 	| "running"
 	| "completed"
-	| "steered"
 	| "aborted"
 	| "stopped"
 	| "error";
@@ -49,6 +49,8 @@ export interface SettledOutcome {
 	workspaceNotice: string | undefined;
 	/** The updates no announcement delivered; what the carrier still owes. */
 	runUpdates: readonly string[];
+	/** The run's turn limit and its use; absent when no limit applied. */
+	turnBudget?: TurnBudget;
 }
 
 // ---- Status classification predicates ----
@@ -61,7 +63,7 @@ export function isActiveStatus(status: SubagentStatus): boolean {
 	return status === "running" || status === "queued";
 }
 
-/** Terminated by error, abort, or external stop (excludes the successful `steered`). */
+/** Terminated by error, harness turn-limit abort, or external stop. */
 export function isTerminalErrorStatus(status: SubagentStatus): boolean {
 	return status === "error" || status === "stopped" || status === "aborted";
 }
@@ -84,6 +86,8 @@ export interface SubagentStateInit {
 	pendingQuestion?: string;
 	/** What a teardown with no result text reported — an outcome fact, like result. */
 	workspaceNotice?: string;
+	/** The run's turn limit and its use — an outcome fact, like result. */
+	turnBudget?: TurnBudget;
 	error?: string;
 	/** Whether the agent was stopped before the limiter ever admitted it. */
 	stoppedWhileQueued?: boolean;
@@ -96,7 +100,6 @@ export interface SubagentStateInit {
 	lifetimeUsage?: LifetimeUsage;
 	compactionCount?: number;
 	// Live activity — activeTools is seeded by name (each entry calls addActiveTool)
-	turnCount?: number;
 	activeTools?: string[];
 	responseText?: string;
 }
@@ -165,6 +168,12 @@ export class SubagentState {
 	private _workspaceNotice?: string;
 	get workspaceNotice(): string | undefined { return this._workspaceNotice; }
 
+	// The run's turn budget, live: the turn loop reports it before the first turn
+	// and after each boundary, so the last report is already the outcome's. Part
+	// of the outcome like _result, and cleared where a run begins (resetForResume).
+	private _turnBudget?: TurnBudget;
+	get turnBudget(): TurnBudget | undefined { return this._turnBudget; }
+
 	// The updates the child sent during this run, each remembering whether the
 	// announcement channel delivered it — so a message reaches the parent once,
 	// through whichever channel could reach it, and no carrier repeats it.
@@ -188,9 +197,6 @@ export class SubagentState {
 	get compactionCount(): number { return this._compactionCount; }
 
 	// Live activity — accumulated via transition methods, readable via getters
-	private _turnCount: number;
-	get turnCount(): number { return this._turnCount; }
-
 	private _activeTools = new Map<string, string>();
 	get activeTools(): ReadonlyMap<string, string> { return this._activeTools; }
 
@@ -204,6 +210,7 @@ export class SubagentState {
 		this._result = init.result;
 		this._pendingQuestion = init.pendingQuestion;
 		this._workspaceNotice = init.workspaceNotice;
+		this._turnBudget = init.turnBudget;
 		this._error = init.error;
 		this._stoppedWhileQueued = init.stoppedWhileQueued ?? false;
 		this._startedAt = init.startedAt ?? Date.now();
@@ -215,7 +222,6 @@ export class SubagentState {
 			? { ...init.lifetimeUsage }
 			: { input: 0, output: 0, cacheWrite: 0 };
 		this._compactionCount = init.compactionCount ?? 0;
-		this._turnCount = init.turnCount ?? 1;
 		this._responseText = init.responseText ?? "";
 		for (const name of init.activeTools ?? []) {
 			this.addActiveTool(name);
@@ -227,7 +233,7 @@ export class SubagentState {
 		return isActiveStatus(this._status);
 	}
 
-	/** Terminated by error, abort, or external stop (excludes `steered`). */
+	/** Terminated by error, harness turn-limit abort, or external stop. */
 	isTerminalError(): boolean {
 		return isTerminalErrorStatus(this._status);
 	}
@@ -255,11 +261,6 @@ export class SubagentState {
 	/** Increment compaction count. Called by record-observer on compaction_end. */
 	incrementCompactions(): void {
 		this._compactionCount++;
-	}
-
-	/** Record a turn boundary. Called by record-observer on turn_end. */
-	incrementTurnCount(): void {
-		this._turnCount++;
 	}
 
 	/** Record a tool starting. Called by record-observer on tool_execution_start. */
@@ -292,6 +293,11 @@ export class SubagentState {
 		this._status = "running";
 		this._startedAt = startedAt;
 		this._runUpdates.length = 0;
+	}
+
+	/** Record the budget the running turn loop reports. */
+	setTurnBudget(budget: TurnBudget): void {
+		this._turnBudget = budget;
 	}
 
 	/** Record an update the child sent during this run, owed to a carrier until delivered. */
@@ -330,18 +336,6 @@ export class SubagentState {
 		this._completedAt ??= completedAt ?? Date.now();
 		if (this._status !== "stopped") {
 			this._status = "aborted";
-		}
-	}
-
-	/**
-	 * Transition to steered state.
-	 * Always sets result and completedAt (??=). Only changes status if not stopped.
-	 */
-	markSteered(result: string, completedAt?: number): void {
-		this._result = result;
-		this._completedAt ??= completedAt ?? Date.now();
-		if (this._status !== "stopped") {
-			this._status = "steered";
 		}
 	}
 
@@ -408,7 +402,7 @@ export class SubagentState {
 
 	/**
 	 * Reset for resume: running status, new startedAt, clear
-	 * completedAt/result/error/consumedAt.
+	 * completedAt/result/error/consumedAt/turnBudget.
 	 *
 	 * The carrier claim deliberately survives: it belongs to the caller that asked
 	 * for the resume and will deliver its outcome, not to the run being reset.
@@ -427,6 +421,7 @@ export class SubagentState {
 		this._result = undefined;
 		this._error = undefined;
 		this._consumedAt = undefined;
+		this._turnBudget = undefined;
 		// A resumed run answers the old question; whether it asks a new one is
 		// decided when it terminates.
 		this._pendingQuestion = undefined;
@@ -452,6 +447,7 @@ export class SubagentState {
 			pendingQuestion: this._pendingQuestion,
 			workspaceNotice: this._workspaceNotice,
 			runUpdates: this.runUpdates,
+			turnBudget: this._turnBudget,
 		};
 	}
 }

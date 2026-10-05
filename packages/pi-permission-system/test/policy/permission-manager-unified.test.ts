@@ -1672,7 +1672,7 @@ describe("PermissionManager — configureForCwd and agentDir option", () => {
     expect(typeof scoped.check).toBe("function");
     expect(typeof scoped.getToolPermission).toBe("function");
     expect(typeof scoped.isToolFullyDenied).toBe("function");
-    expect(typeof scoped.getConfigIssues).toBe("function");
+    expect(typeof scoped.getPolicyIssues).toBe("function");
   });
 
   it("construction with { agentDir } reads global config from getGlobalConfigPath(agentDir)", () => {
@@ -2906,26 +2906,26 @@ test("PermissionManager reads config from PI_CODING_AGENT_DIR when set", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getConfigIssues — moved from catch-all (#342)
+// getPolicyIssues — moved from catch-all (#342)
 // ---------------------------------------------------------------------------
 
-test("PermissionManager.getConfigIssues returns empty array for clean config", () => {
+test("PermissionManager.getPolicyIssues returns empty array for clean config", () => {
   const config: ScopeConfig = {
     permission: { "*": "ask", external_directory: "ask" },
   };
   const { manager, cleanup } = createManager(config);
   try {
-    const issues = manager.getConfigIssues();
+    const issues = manager.getPolicyIssues();
     expect(issues.length).toBe(0);
   } finally {
     cleanup();
   }
 });
 
-test("PermissionManager.getConfigIssues returns empty array for empty config", () => {
+test("PermissionManager.getPolicyIssues returns empty array for empty config", () => {
   const { manager, cleanup } = createManager({});
   try {
-    const issues = manager.getConfigIssues();
+    const issues = manager.getPolicyIssues();
     expect(issues.length).toBe(0);
   } finally {
     cleanup();
@@ -3941,7 +3941,7 @@ describe("a top-level mcp__ key keeps applying to the Pi MCP tool it names", () 
 
   it("asks the operator to port the key", () => {
     withManager({ "*": "allow", [toolName]: "deny" }, (manager) => {
-      expect(manager.getConfigIssues()).toEqual([portNotice]);
+      expect(manager.getPolicyIssues()).toEqual([portNotice]);
     });
   });
 
@@ -3960,13 +3960,13 @@ describe("a top-level mcp__ key keeps applying to the Pi MCP tool it names", () 
 
   it("raises no notice for a key that can name no Pi MCP tool", () => {
     withManager({ "*": "allow", mcp__foo: "deny" }, (manager) => {
-      expect(manager.getConfigIssues()).toEqual([]);
+      expect(manager.getPolicyIssues()).toEqual([]);
     });
   });
 
   it("raises no notice when no such key exists", () => {
     withManager({ "*": "allow", mcp: { "danger-srv": "deny" } }, (manager) => {
-      expect(manager.getConfigIssues()).toEqual([]);
+      expect(manager.getPolicyIssues()).toEqual([]);
     });
   });
 });

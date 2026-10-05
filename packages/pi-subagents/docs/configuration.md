@@ -147,7 +147,7 @@ All fields are optional — sensible defaults for everything.
 | `tools`             | all 7          | The agent's complete tool allowlist — built-in or extension-registered names. `none` for no tools. See [Tool selection](#tool-selection)                                                                                                      |
 | `model`             | inherit parent | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`)                                                                                                                                                                              |
 | `thinking`          | inherit        | off, minimal, low, medium, high, xhigh, max. An unrecognized value is dropped, and the agent inherits the parent's level                                                                                                                      |
-| `max_turns`         | unlimited      | Max agentic turns before graceful shutdown. `0` or omit for unlimited                                                                                                                                                                         |
+| `max_turns`         | unlimited      | Turn ceiling: the harness stops the agent after this many turns (minimum 2). `0` or omit for unlimited                                                                                                                                        |
 | `prompt_mode`       | `append`       | `replace`: parent prompt is the cacheable base; body is appended last with full control and no `<agent_instructions>` wrapper. `append`: parent prompt is the base; body is wrapped in `<agent_instructions>` (agent acts as a "parent twin") |
 | `inherit_context`   | `false`        | Fork parent conversation into agent                                                                                                                                                                                                           |
 | `run_in_background` | `false`        | Run in background by default                                                                                                                                                                                                                  |
@@ -289,7 +289,7 @@ The pattern expands when the agent spawns, to the matching tools **your session*
 
 ## Persistent Settings
 
-Runtime tuning values set via `/subagents:settings` (max concurrency, default max turns, grace turns, the two session-retention windows, the abort-on-interrupt policy, and the mid-run update channel) persist across pi restarts.
+Runtime tuning values set via `/subagents:settings` (max concurrency, default max turns, wrap-up turns, the two session-retention windows, the abort-on-interrupt policy, and the mid-run update channel) persist across pi restarts.
 A completed subagent's record is kept for the whole parent session (so `get_subagent_result` never misses); only its heavy in-memory session is released — after `consumedSessionRetentionMinutes` once the result has been collected, or after the `unconsumedSessionRetentionMinutes` safety cap if it never was.
 An agent that asked a question and has not been answered holds the safety cap rather than the consumed window, because reading a question is not finishing with the agent — the answer is delivered by resuming the very session the short window would release.
 
@@ -303,7 +303,7 @@ Two files, merged on load:
   Written by `/subagents:settings`.
 
 **Precedence:** project overrides global on any field present in both.
-Missing fields fall back to the hardcoded defaults (max concurrency `4`, default max turns unlimited, grace turns `5`, consumed-session retention `10` minutes, unconsumed-session retention `720` minutes, abort-all-on-interrupt `true`, mid-run updates `true`).
+Missing fields fall back to the hardcoded defaults (max concurrency `4`, default max turns unlimited, wrap-up turns `2`, consumed-session retention `10` minutes, unconsumed-session retention `720` minutes, abort-all-on-interrupt `true`, mid-run updates `true`).
 
 **Example — global defaults for a beefy machine:**
 
@@ -312,7 +312,7 @@ mkdir -p ~/.pi/agent
 cat > ~/.pi/agent/subagents.json <<'EOF'
 {
   "maxConcurrent": 16,
-  "graceTurns": 10,
+  "wrapUpTurns": 3,
   "unconsumedSessionRetentionMinutes": 1440,
   "abortAllOnInterrupt": false,
   "midRunUpdates": true
@@ -320,8 +320,12 @@ cat > ~/.pi/agent/subagents.json <<'EOF'
 EOF
 ```
 
-Every project now starts with concurrency 16, grace 10, and ESC left to the parent, without ever touching the command.
+Every project now starts with concurrency 16, a three-turn wrap-up warning, and ESC left to the parent, without ever touching the command.
 Individual projects can still override via `/subagents:settings`.
+
+`wrapUpTurns` is how many turns an agent has left when it is warned about its budget; see [Turn Budget](../README.md#turn-budget).
+It replaced `graceTurns`, which allowed extra turns past `max_turns`: a file that still sets `graceTurns` logs a `[pi-subagents] graceTurns was removed…` warning and the key is ignored, so replace it with `wrapUpTurns`.
+A `defaultMaxTurns` of `1` runs with `2`, the minimum, and logs a warning.
 
 **Failure behavior:** missing file is silent; malformed JSON logs a `[pi-subagents] Ignoring malformed settings at …` warning to stderr; invalid/out-of-range field values are dropped per-field; write failures downgrade the `/subagents:settings` toast to a warning with `(session only; failed to persist)`.
 

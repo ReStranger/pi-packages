@@ -295,6 +295,16 @@ Unlimited turns.`);
     expect(result.get("unlimited")!.maxTurns).toBe(0);
   });
 
+  it("keeps a max_turns below the minimum for the turn loop to raise", () => {
+    writeAgent("terse", `---
+max_turns: 1
+---
+
+Terse.`);
+
+    expect(loadCustomAgents(tmpDir).get("terse")!.maxTurns).toBe(1);
+  });
+
   it("rejects negative max_turns", () => {
     writeAgent("negturns", `---
 max_turns: -5

@@ -28,7 +28,7 @@ function makeDetails(overrides: Partial<NotificationDetails> = {}): Notification
     description: "Test agent",
     status: "completed",
     toolUses: 3,
-    turnCount: 5,
+    turnBudget: { used: 5, phase: "within" },
     totalTokens: 1000,
     durationMs: 5000,
     resultPreview: "All done.",
@@ -44,23 +44,25 @@ function renderText(result: ReturnType<ReturnType<typeof createNotificationRende
 
 describe("resolveStatusPresentation", () => {
   it("resolves completed status", () => {
-    expect(resolveStatusPresentation("completed")).toEqual({
+    expect(resolveStatusPresentation({ status: "completed" })).toEqual({
       iconGlyph: "✓",
       iconStyle: "success",
       statusText: "completed",
     });
   });
 
-  it("resolves steered status to completed (steered)", () => {
-    expect(resolveStatusPresentation("steered")).toEqual({
+  it("resolves a completed run the harness warned to completed (wrapped up)", () => {
+    expect(
+      resolveStatusPresentation({ status: "completed", turnBudget: { maxTurns: 2, used: 3, phase: "warned" } }),
+    ).toEqual({
       iconGlyph: "✓",
       iconStyle: "success",
-      statusText: "completed (steered)",
+      statusText: "completed (wrapped up)",
     });
   });
 
   it("resolves error status", () => {
-    expect(resolveStatusPresentation("error")).toEqual({
+    expect(resolveStatusPresentation({ status: "error" })).toEqual({
       iconGlyph: "✗",
       iconStyle: "error",
       statusText: "error",
@@ -68,7 +70,7 @@ describe("resolveStatusPresentation", () => {
   });
 
   it("resolves stopped status", () => {
-    expect(resolveStatusPresentation("stopped")).toEqual({
+    expect(resolveStatusPresentation({ status: "stopped" })).toEqual({
       iconGlyph: "✗",
       iconStyle: "error",
       statusText: "stopped",
@@ -76,7 +78,7 @@ describe("resolveStatusPresentation", () => {
   });
 
   it("resolves aborted status", () => {
-    expect(resolveStatusPresentation("aborted")).toEqual({
+    expect(resolveStatusPresentation({ status: "aborted" })).toEqual({
       iconGlyph: "✗",
       iconStyle: "error",
       statusText: "aborted",
@@ -88,8 +90,7 @@ describe("resolveStatusPresentation", () => {
 describe("buildStatsParts", () => {
   it("includes all parts in order when all fields are present", () => {
     const parts = buildStatsParts({
-      turnCount: 5,
-      maxTurns: 10,
+      turnBudget: { maxTurns: 10, used: 5, phase: "within" },
       toolUses: 3,
       totalTokens: 1000,
       durationMs: 5000,
@@ -97,31 +98,39 @@ describe("buildStatsParts", () => {
     expect(parts).toEqual(["↻5≤10", "3 tool uses", "1.0k token", "5.0s"]);
   });
 
-  it("omits a part when its field is zero", () => {
+  it("omits the turn part when the run has no turn budget yet", () => {
     expect(
-      buildStatsParts({ turnCount: 0, maxTurns: 10, toolUses: 3, totalTokens: 1000, durationMs: 5000 }),
+      buildStatsParts({ turnBudget: undefined, toolUses: 3, totalTokens: 1000, durationMs: 5000 }),
     ).toEqual(["3 tool uses", "1.0k token", "5.0s"]);
+  });
+
+  it("shows an unlimited run's turns without a ceiling", () => {
     expect(
-      buildStatsParts({ turnCount: 5, maxTurns: 10, toolUses: 0, totalTokens: 1000, durationMs: 5000 }),
+      buildStatsParts({ turnBudget: { used: 4, phase: "within" }, toolUses: 0, totalTokens: 0, durationMs: 0 }),
+    ).toEqual(["↻4"]);
+  });
+
+  it("omits a stat part when its field is zero", () => {
+    expect(
+      buildStatsParts({ turnBudget: { maxTurns: 10, used: 5, phase: "within" }, toolUses: 0, totalTokens: 1000, durationMs: 5000 }),
     ).toEqual(["↻5≤10", "1.0k token", "5.0s"]);
     expect(
-      buildStatsParts({ turnCount: 5, maxTurns: 10, toolUses: 3, totalTokens: 0, durationMs: 5000 }),
+      buildStatsParts({ turnBudget: { maxTurns: 10, used: 5, phase: "within" }, toolUses: 3, totalTokens: 0, durationMs: 5000 }),
     ).toEqual(["↻5≤10", "3 tool uses", "5.0s"]);
     expect(
-      buildStatsParts({ turnCount: 5, maxTurns: 10, toolUses: 3, totalTokens: 1000, durationMs: 0 }),
+      buildStatsParts({ turnBudget: { maxTurns: 10, used: 5, phase: "within" }, toolUses: 3, totalTokens: 1000, durationMs: 0 }),
     ).toEqual(["↻5≤10", "3 tool uses", "1.0k token"]);
   });
 
   it("returns an empty array when all fields are zero", () => {
     expect(
-      buildStatsParts({ turnCount: 0, maxTurns: undefined, toolUses: 0, totalTokens: 0, durationMs: 0 }),
+      buildStatsParts({ turnBudget: undefined, toolUses: 0, totalTokens: 0, durationMs: 0 }),
     ).toEqual([]);
   });
 
   it("pluralizes tool use for exactly one", () => {
     const parts = buildStatsParts({
-      turnCount: 0,
-      maxTurns: undefined,
+      turnBudget: undefined,
       toolUses: 1,
       totalTokens: 0,
       durationMs: 0,
@@ -131,8 +140,7 @@ describe("buildStatsParts", () => {
 
   it("pluralizes tool uses for more than one", () => {
     const parts = buildStatsParts({
-      turnCount: 0,
-      maxTurns: undefined,
+      turnBudget: undefined,
       toolUses: 2,
       totalTokens: 0,
       durationMs: 0,

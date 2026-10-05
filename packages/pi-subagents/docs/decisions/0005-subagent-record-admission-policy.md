@@ -72,26 +72,28 @@ This was true of every field except `lifetimeUsage`, which was assigned by refer
 
 ### Dispositions
 
-| Field                                          | Disposition                          | Basis                                                           |
-| ---------------------------------------------- | ------------------------------------ | --------------------------------------------------------------- |
-| `id`, `type`, `description`, `status`          | admitted (already present)           | identity and lifecycle status                                   |
-| `result`, `error`, `completedAt`               | admitted, optional (already present) | terminal facts, absent until the agent ends                     |
-| `toolUses`, `lifetimeUsage`, `compactionCount` | admitted (already present)           | cumulative metrics                                              |
-| `startedAt`                                    | admitted (already present)           | resolved lifecycle timestamp                                    |
-| `isBackground`                                 | admitted, required                   | resolved spawn fact, known from the choke point onward ([#724]) |
-| `turnCount`                                    | admitted, required                   | cumulative metric; parity with `toolUses` and `compactionCount` |
-| `maxTurns`                                     | admitted, optional                   | spawn-time configuration; genuinely absent when unset           |
-| `outputFile`                                   | admitted, optional                   | pointer to the child's durable session transcript               |
-| `activeTools`                                  | declined                             | rule 2 — momentary set, and a `Map` on the live record          |
-| `responseText`                                 | declined                             | rule 2 — momentary and unbounded in size                        |
-| `consumedAt`                                   | declined                             | rule 3 — result-delivery bookkeeping behind the retention sweep |
-| `stoppedWhileQueued`                           | declined                             | rule 3 — internal marker selecting a never-started result text  |
+| Field                                          | Disposition                          | Basis                                                            |
+| ---------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------- |
+| `id`, `type`, `description`, `status`          | admitted (already present)           | identity and lifecycle status                                    |
+| `result`, `error`, `completedAt`               | admitted, optional (already present) | terminal facts, absent until the agent ends                      |
+| `toolUses`, `lifetimeUsage`, `compactionCount` | admitted (already present)           | cumulative metrics                                               |
+| `startedAt`                                    | admitted (already present)           | resolved lifecycle timestamp                                     |
+| `isBackground`                                 | admitted, required                   | resolved spawn fact, known from the choke point onward ([#724])  |
+| `turnCount`                                    | removed                              | folded into `turnBudget.used`, which counts the current run only |
+| `maxTurns`                                     | removed                              | folded into `turnBudget.maxTurns`, resolved where it is enforced |
+| `turnBudget`                                   | admitted, optional                   | the run's live turn budget; absent until its turn loop starts    |
+| `outputFile`                                   | admitted, optional                   | pointer to the child's durable session transcript                |
+| `activeTools`                                  | declined                             | rule 2 — momentary set, and a `Map` on the live record           |
+| `responseText`                                 | declined                             | rule 2 — momentary and unbounded in size                         |
+| `consumedAt`                                   | declined                             | rule 3 — result-delivery bookkeeping behind the retention sweep  |
+| `stoppedWhileQueued`                           | declined                             | rule 3 — internal marker selecting a never-started result text   |
 
 ## Consequences
 
 - The public snapshot answers "what is this agent, how is it progressing, and how did it end?"
-  A consumer can render progress (`turnCount` against `maxTurns`), filter the roster (`isBackground`) without reconstructing the mode from a display snapshot, and open the child's transcript (`outputFile`) — the pipeline [ADR 0004](0004-reconsider-ui-direction.md) established against the in-package record.
-- Pull request [#748]'s widening is **partially adopted**: `turnCount` and `outputFile` are in, `activeTools` is declined under rule 2.
+  A consumer can render progress (`turnBudget.used` against `turnBudget.maxTurns`), filter the roster (`isBackground`) without reconstructing the mode from a display snapshot, and open the child's transcript (`outputFile`) — the pipeline [ADR 0004](0004-reconsider-ui-direction.md) established against the in-package record.
+- Pull request [#748]'s widening is **partially adopted**: `turnCount` and `outputFile` were admitted, `activeTools` is declined under rule 2.
+  `turnCount` and `maxTurns` later folded into `turnBudget`, one live field for a run's turns, its ceiling, and whether the harness warned or stopped it ([#1022]).
 - Live agent activity has no external path at all, since no broadcast channel carries it either.
   That is the intended state of a "no vacant hooks" core, not an oversight.
   **Revisit condition:** a named consumer plus a reactive channel for momentary state.
@@ -104,3 +106,4 @@ This was true of every field except `lifetimeUsage`, which was assigned by refer
 [#724]: https://github.com/gotgenes/pi-packages/issues/724
 [#748]: https://github.com/gotgenes/pi-packages/pull/748
 [#828]: https://github.com/gotgenes/pi-packages/issues/828
+[#1022]: https://github.com/gotgenes/pi-packages/issues/1022

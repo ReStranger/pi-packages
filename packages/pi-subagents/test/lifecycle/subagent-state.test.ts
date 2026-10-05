@@ -7,12 +7,12 @@ import {
 	type SubagentStateInit,
 	type SubagentStatus,
 } from "#src/lifecycle/subagent-state";
+import type { TurnBudget } from "#src/lifecycle/turn-limits";
 
 const ALL_STATUSES: SubagentStatus[] = [
 	"queued",
 	"running",
 	"completed",
-	"steered",
 	"aborted",
 	"stopped",
 	"error",
@@ -41,7 +41,6 @@ describe("SubagentState — constructor", () => {
 
 	it("defaults live-activity fields", () => {
 		const state = new SubagentState();
-		expect(state.turnCount).toBe(1);
 		expect(state.responseText).toBe("");
 		expect(state.activeTools.size).toBe(0);
 	});
@@ -90,11 +89,9 @@ describe("SubagentState — constructor full-value seeding", () => {
 
 	it("seeds live-activity fields", () => {
 		const state = new SubagentState({
-			turnCount: 3,
 			activeTools: ["read", "bash"],
 			responseText: "partial output",
 		});
-		expect(state.turnCount).toBe(3);
 		expect([...state.activeTools.values()]).toEqual(["read", "bash"]);
 		expect(state.responseText).toBe("partial output");
 	});
@@ -164,24 +161,6 @@ describe("SubagentState — markAborted", () => {
 		state.markAborted("partial", 2000);
 		expect(state.status).toBe("stopped");
 		expect(state.result).toBe("partial");
-		expect(state.completedAt).toBe(500);
-	});
-});
-
-describe("SubagentState — markSteered", () => {
-	it("sets status to 'steered' with result and completedAt", () => {
-		const state = new SubagentState({ status: "running" });
-		state.markSteered("redirected", 4000);
-		expect(state.status).toBe("steered");
-		expect(state.result).toBe("redirected");
-		expect(state.completedAt).toBe(4000);
-	});
-
-	it("preserves status when already stopped, but still sets result", () => {
-		const state = new SubagentState({ status: "stopped", completedAt: 500 });
-		state.markSteered("redirected", 2000);
-		expect(state.status).toBe("stopped");
-		expect(state.result).toBe("redirected");
 		expect(state.completedAt).toBe(500);
 	});
 });
@@ -416,6 +395,58 @@ describe("SubagentState — resetForResume", () => {
 	});
 });
 
+describe("SubagentState — turn budget", () => {
+	const WITHIN: TurnBudget = { maxTurns: 5, used: 1, phase: "within" };
+	const WARNED: TurnBudget = { maxTurns: 5, used: 3, phase: "warned" };
+	const EXHAUSTED: TurnBudget = { maxTurns: 5, used: 5, phase: "exhausted" };
+
+	it("has no budget until a run's turn loop reports one", () => {
+		expect(new SubagentState().turnBudget).toBeUndefined();
+	});
+
+	it("seeds the budget from init", () => {
+		expect(new SubagentState({ turnBudget: WARNED }).turnBudget).toEqual(WARNED);
+	});
+
+	it("records each budget the running turn loop reports", () => {
+		const state = new SubagentState({ status: "running" });
+		state.setTurnBudget(WITHIN);
+		expect(state.turnBudget).toEqual(WITHIN);
+		state.setTurnBudget(WARNED);
+		expect(state.turnBudget).toEqual(WARNED);
+	});
+
+	it("keeps the live budget through a terminal transition", () => {
+		const state = new SubagentState({ status: "running" });
+		state.setTurnBudget(EXHAUSTED);
+		state.markAborted("partial", 5000);
+		expect(state.turnBudget).toEqual(EXHAUSTED);
+	});
+
+	it("a stop during the warned phase keeps stopped and the budget the loop reached", () => {
+		const state = new SubagentState({ status: "running" });
+		state.setTurnBudget(WARNED);
+		state.markStopped(500);
+		state.markCompleted("late", 2000);
+		expect(state.status).toBe("stopped");
+		expect(state.turnBudget).toEqual(WARNED);
+	});
+
+	it("resetForResume clears the budget, which belongs to the run that produced it", () => {
+		const state = new SubagentState({ status: "completed", turnBudget: WARNED });
+		state.resetForResume(9000);
+		expect(state.turnBudget).toBeUndefined();
+	});
+
+	it("a superseded outcome keeps the budget the reset run ended with", () => {
+		const state = new SubagentState({ status: "running", result: "first" });
+		state.setTurnBudget(WARNED);
+		state.markCompleted("first", 5000);
+		state.resetForResume(9000);
+		expect(state.supersededOutcome(1)?.turnBudget).toEqual(WARNED);
+	});
+});
+
 describe("SubagentState — consumption", () => {
 	it("defaults to not consumed", () => {
 		const state = new SubagentState();
@@ -557,21 +588,6 @@ describe("SubagentState — carrier claim", () => {
 		state.resetForResume(7000);
 		expect(state.claimed).toBe(true);
 		expect(state.consumedAt).toBeUndefined();
-	});
-});
-
-describe("SubagentState — turnCount", () => {
-	it("defaults to 1", () => {
-		const state = new SubagentState();
-		expect(state.turnCount).toBe(1);
-	});
-
-	it("increments by 1 on each incrementTurnCount call", () => {
-		const state = new SubagentState();
-		state.incrementTurnCount();
-		expect(state.turnCount).toBe(2);
-		state.incrementTurnCount();
-		expect(state.turnCount).toBe(3);
 	});
 });
 

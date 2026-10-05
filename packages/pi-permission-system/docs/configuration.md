@@ -552,7 +552,7 @@ The bash gate fails closed: when in doubt it blocks or prompts, never silently a
 - An indirection wrapper — `sudo`, `env`, `xargs`, `time`, `nohup`, `timeout`, `nice`, `parallel`, `rust-parallel`, `rush`, `doas`, `setsid`, `stdbuf`, `watch`, `flock`, or `find`/`fd` carrying a per-result exec flag (`find` with `-exec`/`-execdir`/`-ok`/`-okdir`, `fd` with `-x`/`--exec`/`-X`/`--exec-batch`) — runs a following command that a rule on the wrapper text would otherwise never gate, so its decision is floored the same way (the synthetic `<indirection-bash-wrapper>` pattern in the review log).
   So `sudo aws s3 rm s3://bucket` prompts rather than riding an `aws *: allow`, while a bare `find . -name '*.py'` search (no exec flag) is unaffected.
   An `allow` is clamped to `ask`, and an explicit `deny` still denies.
-  The one exception is a wrapper running a [pure-reader command](#wrapper-transparency), whose direction is provable however unknown its argument feed is.
+  The [two exceptions](#wrapper-transparency) are a wrapper running a pure-reader command, whose direction is provable however unknown its argument feed is, and a wrapper that only modifies how a command runs (`time`, `timeout`, `nice`, `stdbuf`, `setsid`), which is decided exactly as the command it runs.
 
 Every synthetic `ask` above — the two parse sentinels and both wrapper floors — is auto-approved under `yoloMode: true`, which is an explicit full-permissive opt-in rather than a rule that could ride through.
 An explicit `deny` still denies under yolo, and with yolo off the floors are unaffected.
@@ -1038,7 +1038,12 @@ Two more shapes withdraw the claim:
 #### Wrapper transparency
 
 The [indirection-wrapper floor](#fail-closed-behavior) exists because a wrapper hides the command that should be gated.
-For one class the hiding is immaterial: a pure-reader command is read-only for **any** arguments, so `xargs grep -l foo` is provably a read even though what `xargs` feeds it is unknowable.
+Two kinds of wrapper unit have no reason to be floored: one running a [pure reader](#a-wrapper-running-a-pure-reader), and one that only [modifies how a command runs](#a-wrapper-that-only-modifies-execution).
+Each resolves by the inner command's own `bash` rules, and the review log records which reason applied as `floorExemption`.
+
+##### A wrapper running a pure reader
+
+For this class the hiding is immaterial: a pure-reader command is read-only for **any** arguments, so `xargs grep -l foo` is provably a read even though what `xargs` feeds it is unknowable.
 The floor guards unknowability of *scope*, and scope stays the path surfaces' job — for a wrapped command exactly as for a bare one.
 
 Such a unit is therefore **not** floored.
@@ -1054,7 +1059,7 @@ All four of these must hold, and each is a way the floor's reason could still ap
 4. The enclosing statement provably writes no file through a redirect.
    A destination the parse cannot resolve — `> $OUT`, `> $(mktemp)` — counts against the exemption rather than for it.
 
-So `xargs grep -l foo`, `xargs wc -l`, `xargs sed -n 1p`, and `find . -name '*.ts' -exec cat {} +` stop prompting under a matching `bash` allow, while `xargs rm`, `xargs sed -i`, `time pnpm test`, and `find . -exec sh -c '…' \;` still prompt.
+So `xargs grep -l foo`, `xargs wc -l`, `xargs sed -n 1p`, and `find . -name '*.ts' -exec cat {} +` stop prompting under a matching `bash` allow, while `xargs rm`, `xargs sed -i`, and `find . -exec sh -c '…' \;` still prompt.
 
 Three things this does **not** change:
 
@@ -1066,10 +1071,35 @@ Three things this does **not** change:
   The exemption decides the `bash` surface only, and every path token the command projects still goes through `path` and `external_directory` with the direction its command proved.
   Clause 4 is what keeps that from being a weaker promise than it sounds: a redirect destination the parse cannot resolve (`> $OUT`, `> $(mktemp)`) is not projected onto those surfaces either, so the wrapper keeps its floor rather than relying on a gate that would not see the write.
 
+##### A wrapper that only modifies execution
+
+`time`, `timeout`, `nice`, `stdbuf`, and `setsid` change only *how* the same visible command runs: its timing, kill deadline, scheduling, buffering, or session.
+Every operand is on the command line, and the wrapper adds no privilege, environment, or argument feed, so the floor's reason does not hold whatever the inner command does.
+Such a unit resolves exactly as the command it runs, and the review log records `floorExemption: "execution-modifier"`.
+
+All four of these must hold, and each keeps the decision about the command that really runs:
+
+1. **Every** wrapper layer is one of the five.
+   `time sudo rm -rf x` and `sudo time pnpm test` stay floored, as do `nohup` (it may write `nohup.out`) and `flock` (it creates its lock file).
+2. Every option on each layer is one that wrapper is known to take, spelled in full, and every option, value, and operand is written literally (an environment assignment, which the shell does not split, may be computed).
+   A word the shell rewrites (`timeout $D …`, `timeout {5,sudo} …`) may become several, one of them a wrapper, so it keeps the floor.
+   So `timeout --sig KILL 5 …` (an abbreviation) and `nice -5 …` stay floored, and so do `time`'s file-writing `-o`, `--output`, and `-a`.
+   The admitted options are `time -p`/`-l`/`-h`/`-f`; `timeout -s`/`-k`/`-f`/`-p`/`-v` and their long forms; `nice -n`/`--adjustment`; and `stdbuf -i`/`-o`/`-e` and their long forms.
+3. The command it runs is not itself a wrapper or an inline shell, so `timeout 5 bash -c '…'` stays floored.
+4. The command it runs is named literally.
+   `time ( … )` and `time { …; }` stay floored: the parser reads the group as `time`'s arguments, so the commands inside are not yet gated on their own rules.
+
+So under `bash: {"*": "allow", "git push *": "deny"}`, `time pnpm run lint >/tmp/lint.txt 2>&1` is allowed and `timeout 60 git push --force` is denied, exactly as without the wrapper.
+No redirect refusal applies here: the redirect destination goes through `path` and `external_directory` as it does for the bare command, and a destination the parse cannot resolve (`> $OUT`) is unprojected for both forms alike.
+When a unit qualifies for both exemptions (`time grep foo`), the review log records `core-reader`.
+
+##### Declarations and privilege
+
+Neither exemption is extended by configuration.
 A user `commandEffects` declaration participates in effect classification but does **not** lift the floor.
 The core's argument-independence is audited here; a claim about a wrapped command is not, and a wrong claim behind a wrapper fails open.
 
-`sudo` and `doas` are ordinary wrappers to this rule.
+`sudo` and `doas` are ordinary wrappers to the pure-reader rule, and never execution modifiers.
 The path surfaces gate `sudo cat /etc/shadow` exactly as they gate `cat /etc/shadow`, so nothing about the *file set* changes — what `sudo` adds is that the operating system would have refused, which this extension has never modelled.
 If you run a permissive `bash` policy and want privilege elevation to prompt regardless, say so directly:
 

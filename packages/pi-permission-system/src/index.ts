@@ -41,6 +41,7 @@ import { ConfigStore } from "#src/config/config-store";
 import { resolveDialogKeys } from "#src/config/dialog-keys";
 import { isYoloModeEnabled } from "#src/config/extension-config";
 import { computeExtensionPaths } from "#src/config/extension-paths";
+import { PolicyIssueReporter } from "#src/config/policy-issue-reporter";
 import { GateRunner } from "#src/handlers/gates/runner";
 import { SkillInputGatePipeline } from "#src/handlers/gates/skill-input-gate-pipeline";
 import { ToolCallGatePipeline } from "#src/handlers/gates/tool-call-gate-pipeline";
@@ -339,9 +340,12 @@ export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
   // was recorded as delivered and never shown (#933). Driven at session_start
   // and on every turn; the latch keeps an unchanged issue quiet.
   const configIssueReporter = new ConfigIssueReporter(configStore, logger);
+  // What composing policy revealed (a fail-closed clamp, a port notice) is
+  // agent-scoped, so each driver hands over the agent name it resolved (#953).
+  const policyIssueReporter = new PolicyIssueReporter(resolver, logger);
   const lifecycle = new SessionLifecycleHandler(
     session,
-    resolver,
+    policyIssueReporter,
     serviceLifecycle,
     logger,
     audit,
@@ -363,6 +367,7 @@ export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
     toolRegistry,
     logger,
     subagentDetection,
+    policyIssueReporter,
   );
 
   const gateRunner = new GateRunner(

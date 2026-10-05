@@ -48,6 +48,28 @@ function makeKeyedResolver(
   };
 }
 
+/**
+ * Resolver modelling a `<prefix> *` rule: a command that *starts with* the
+ * prefix resolves to `state`, and anything else to allow (the permissive
+ * top-level `*`). Unlike a substring match, a wrapper's own text never matches
+ * the rule for the command it runs.
+ */
+function makePrefixResolver(
+  prefix: string,
+  state: PermissionState,
+): ScopedPermissionResolver {
+  return {
+    resolve: (intent) => {
+      const command = bashCommandOf(intent) ?? "";
+      return makeCheckResult({
+        state: command.startsWith(prefix) ? state : "allow",
+        source: "bash",
+        command,
+      });
+    },
+  };
+}
+
 async function decide(
   command: string,
   resolver: ScopedPermissionResolver,
@@ -175,22 +197,6 @@ describe("bash command gate — nested execution hosts do not weaken", () => {
  * substring match would find `git` in `2>/dev/null git push` and prove nothing.
  */
 describe("bash command gate — a redirect's position does not weaken", () => {
-  function makePrefixResolver(
-    prefix: string,
-    state: PermissionState,
-  ): ScopedPermissionResolver {
-    return {
-      resolve: (intent) => {
-        const command = bashCommandOf(intent) ?? "";
-        return makeCheckResult({
-          state: command.startsWith(prefix) ? state : "allow",
-          source: "bash",
-          command,
-        });
-      },
-    };
-  }
-
   const placements: {
     label: string;
     place: (head: string, rest: string) => string;
@@ -341,6 +347,82 @@ describe("bash command gate — a transparent wrapper does not weaken", () => {
     expect(await decide("xargs grep -l foo < in.txt", resolver)).toBe("allow");
     expect(await decide("xargs grep -l foo 2>&1", resolver)).toBe("allow");
   });
+});
+
+/**
+ * A wrapper that changes only *how* a command runs — `time`, `timeout`, `nice`,
+ * `stdbuf`, `setsid` — is decided exactly as the command it runs (#963).
+ *
+ * Stronger than the never-weaker property above: the wrapped decision must
+ * *equal* the bare one, in both directions, so an inner `deny` reaches through
+ * the wrapper and an inner `allow` is not floored.
+ */
+describe("bash command gate — an execution modifier inherits the verdict", () => {
+  const modifiers = [
+    (cmd: string) => `time ${cmd}`,
+    (cmd: string) => `timeout 5 ${cmd}`,
+    (cmd: string) => `nice -n 5 ${cmd}`,
+    (cmd: string) => `stdbuf -oL ${cmd}`,
+    (cmd: string) => `setsid ${cmd}`,
+    (cmd: string) => `time timeout 5 ${cmd}`,
+  ];
+
+  const cases: { bare: string; prefix: string; state: PermissionState }[] = [
+    { bare: "pnpm test", prefix: "pnpm", state: "allow" },
+    { bare: "pnpm test", prefix: "pnpm", state: "ask" },
+    { bare: "pnpm test", prefix: "pnpm", state: "deny" },
+    { bare: "git push --force", prefix: "git push", state: "deny" },
+  ];
+
+  for (const wrap of modifiers) {
+    for (const { bare, prefix, state } of cases) {
+      it(`decides "${wrap(bare)}" as "${bare}" at ${state}`, async () => {
+        const resolver = makePrefixResolver(prefix, state);
+
+        expect(await decide(bare, resolver)).toBe(state);
+        expect(await decide(wrap(bare), resolver)).toBe(state);
+      });
+    }
+  }
+
+  it("allows the timed lint run that prompted the issue", async () => {
+    const command =
+      'time pnpm run lint >/tmp/lintout.txt 2>&1; echo "lint rc=$?"; tail -3 /tmp/lintout.txt';
+
+    expect(await decide(command, makeKeyedResolver([]))).toBe("allow");
+  });
+
+  it("keeps an explicit ask on the wrapper", async () => {
+    const resolver = makePrefixResolver("time", "ask");
+
+    expect(await decide("time pnpm test", resolver)).toBe("ask");
+  });
+
+  // The wrapper's text never matches the `rm *` rule, so only the floor stands
+  // between these and a permissive `*`: each must ask, never allow.
+  it.each([
+    "timeout --sig KILL 5 rm -rf /",
+    "nice --adj 5 rm -rf /",
+    "time sudo rm -rf x",
+    "time { rm -rf /tmp/x; }",
+    "time (rm -rf /tmp/x)",
+    "timeout 5 bash -c 'rm x'",
+    "timeout -- 5 sudo rm x",
+    "timeout -s KILL -- 5 bash -c 'rm x'",
+    "nice -n 1 -- timeout -- 5 sudo rm x",
+    "timeout {5,sudo} rm x",
+    // `D="5 sudo"` splits into a duration and a wrapper the gate never sees.
+    "timeout $D pnpm test",
+    "nice -n $N pnpm test",
+    "timeout $(echo 5 sudo) rm x",
+  ])(
+    "floors %s rather than resolving a misread inner command",
+    async (command) => {
+      const resolver = makePrefixResolver("rm", "deny");
+
+      expect(await decide(command, resolver)).toBe("ask");
+    },
+  );
 });
 
 /**

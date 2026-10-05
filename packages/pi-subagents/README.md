@@ -25,7 +25,7 @@ Run them in foreground or background, steer them mid-run, resume completed sessi
   An agent given an isolated workspace by a `WorkspaceProvider` is resumable while that workspace is live — which, for an agent that ended its turn with a question, lasts until you answer it
 - **Ask-back** — an agent that needs information only you have calls `ask_parent` and ends its turn, and every result surfaces the question with the exact `resume` call that answers it; once that agent can no longer be resumed, the result says so and why instead of naming a call that would be refused
 - **Mid-run updates** — an agent that finds something material calls `notify_parent` and keeps working; the message arrives on its own while you are idle and that agent is still running, and otherwise rides that agent's own result, so you hear it exactly once and never as a stale prompt to steer an agent that has finished
-- **Graceful turn limits** — agents get a "wrap up" warning before hard abort, producing clean partial results instead of cut-off output
+- **Turn budgets** — `max_turns` is a hard ceiling, and an agent is told how many turns it has left while it still has room to wrap up, so it answers instead of being cut off
 - **Case-insensitive agent types** — `"explore"`, `"Explore"`, `"EXPLORE"` all work.
   Unknown types fall back to general-purpose with a note
 - **Fuzzy model selection** — specify models by name (`"haiku"`, `"sonnet"`) instead of full IDs, with automatic filtering to only available/configured models
@@ -89,14 +89,14 @@ The token field is annotated with two optional signals inside parens:
 
 Individual agent results render inline in the conversation:
 
-| State          | Example                                                                                  |
-| -------------- | ---------------------------------------------------------------------------------------- |
-| **Running**    | `⠹ ↻3≤30 · 3 tool uses · 12.4k token (8%)` / `⎿ searching, reading 3 files…`             |
-| **Completed**  | `✓ ↻8 · 5 tool uses · 33.8k token (62%) · 12.3s` / `⎿ Done`                              |
-| **Wrapped up** | `✓ ↻50≤50 · 50 tool uses · 89.1k token (84% · ⇊2) · 45.2s` / `⎿ Wrapped up (turn limit)` |
-| **Stopped**    | `■ ↻3 · 3 tool uses · 12.4k token (8%)` / `⎿ Stopped`                                    |
-| **Error**      | `✗ ↻3 · 3 tool uses · 12.4k token (8%)` / `⎿ Error: timeout`                             |
-| **Aborted**    | `✗ ↻55≤50 · 55 tool uses · 102.3k token (95% · ⇊3)` / `⎿ Aborted (max turns exceeded)`   |
+| State          | Example                                                                                      |
+| -------------- | -------------------------------------------------------------------------------------------- |
+| **Running**    | `⠹ ↻3≤30 · 3 tool uses · 12.4k token (8%)` / `⎿ searching, reading 3 files…`                 |
+| **Completed**  | `✓ ↻8 · 5 tool uses · 33.8k token (62%) · 12.3s` / `⎿ Done`                                  |
+| **Wrapped up** | `✓ ↻49≤50 · 49 tool uses · 89.1k token (84% · ⇊2) · 45.2s` / `⎿ Wrapped up (budget warning)` |
+| **Stopped**    | `■ ↻3 · 3 tool uses · 12.4k token (8%)` / `⎿ Stopped`                                        |
+| **Error**      | `✗ ↻3 · 3 tool uses · 12.4k token (8%)` / `⎿ Error: timeout`                                 |
+| **Aborted**    | `✗ ↻50≤50 · 50 tool uses · 102.3k token (95% · ⇊3)` / `⎿ Aborted (turn limit reached)`       |
 
 Completed results can be expanded (ctrl+o in pi) to show the full agent output inline.
 
@@ -124,7 +124,7 @@ Launch a sub-agent.
 | `subagent_type`     | string       | yes      | Agent type (built-in or custom)                                  |
 | `model`             | string       | no       | Model — `provider/modelId` or fuzzy name (`"haiku"`, `"sonnet"`) |
 | `thinking`          | string       | no       | Thinking level: off, minimal, low, medium, high, xhigh, max      |
-| `max_turns`         | number       | no       | Max agentic turns. Omit for the agent's own limit                |
+| `max_turns`         | number       | no       | Turn ceiling (minimum 2). Omit for the agent's own limit         |
 | `run_in_background` | boolean      | no       | Run without blocking                                             |
 | `resume`            | string       | no       | Agent ID to resume a previous session                            |
 | `inherit_context`   | boolean      | no       | Fork parent conversation into agent                              |
@@ -168,7 +168,7 @@ The message interrupts after the current tool execution.
 
 ### `/subagents:settings`
 
-Interactive list to tune runtime settings — max concurrency, default max turns, grace turns, the two session-retention windows, and whether ESC aborts every subagent.
+Interactive list to tune runtime settings — max concurrency, default max turns, wrap-up turns, the two session-retention windows, and whether ESC aborts every subagent.
 The numeric settings open an input prompt; the abort-on-ESC entry is a direct flip.
 Changes persist across pi restarts (see [Persistent Settings](./docs/configuration.md#persistent-settings)).
 
@@ -190,20 +190,31 @@ On a narrow terminal the footer drops the key hints, and the header drops the ta
 
 Creating and editing agent definitions is not a command — write an agent `.md` file in your editor, or ask a pi session to generate one (see [Custom Agents](./docs/configuration.md#custom-agents)).
 
-## Graceful Max Turns
+## Turn Budget
 
-Instead of hard-aborting at the turn limit, agents get a graceful shutdown:
+`max_turns` is the ceiling on a run: no turn after turn `max_turns` runs.
+An agent is told its remaining budget while it still has room to finish:
 
-1. At `max_turns` — steering message: _"Wrap up immediately — provide your final answer now."_
-2. Up to 5 grace turns to finish cleanly
-3. Hard abort only after the grace period
+1. Once `wrapUpTurns` turns remain (a `/subagents:settings` value, default 2), the agent gets a context message stating how many turns it has left and that the harness stops it after that.
+   It reads that message on its next turn, and the message never forces an extra turn.
+   When every turn is a wrap-up turn, the budget is stated before the first one.
+2. If the agent is still calling tools on turn `max_turns`, the harness stops it and the run ends `aborted`.
+   An agent that gives its final answer on that turn finishes normally.
 
-| Status      | Meaning                       | Icon       |
-| ----------- | ----------------------------- | ---------- |
-| `completed` | Finished naturally            | `✓` green  |
-| `steered`   | Hit limit, wrapped up in time | `✓` yellow |
-| `aborted`   | Grace period exceeded         | `✗` red    |
-| `stopped`   | User-initiated abort          | `■` dim    |
+Only successful turns count: a response that errored and was retried does not spend budget.
+The minimum `max_turns` is 2, one turn to work and one to answer; a smaller value runs with 2, and the spawn result says so.
+A resumed agent gets a fresh budget with its original ceiling.
+
+| Status      | Meaning                                   | Icon       |
+| ----------- | ----------------------------------------- | ---------- |
+| `completed` | Finished naturally                        | `✓` green  |
+| `completed` | Finished after the turn-budget warning    | `✓` yellow |
+| `aborted`   | Still working at the ceiling; stopped     | `✗` red    |
+| `stopped`   | User-initiated abort                      | `■` dim    |
+
+The budget itself is the `turnBudget` field (`{ used, maxTurns, phase }`) on the subagent record, tool-result details, notifications, and the terminal events.
+It is live while the agent runs: `used` counts the run's successful turns, `maxTurns` is absent for an unlimited run, and `phase` is `within`, then `warned` once the warning was sent, then `exhausted` when the harness stopped the run (always paired with `aborted`).
+The widget shows a warned agent's turn count in the warning color.
 
 ## Concurrency
 
@@ -241,18 +252,18 @@ Before this behavior existed, children fired `session_start` with no matching sh
 
 Agent lifecycle events are emitted via `pi.events.emit()` so other extensions can react:
 
-| Event                        | When                                                    | Key fields                                                                                                           |
-| ---------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `subagents:created`          | Background agent registered                             | `id`, `type`, `description`, `isBackground`                                                                          |
-| `subagents:started`          | Agent transitions to running (including queued→running) | `id`, `type`, `description`                                                                                          |
-| `subagents:completed`        | Agent finished successfully                             | `id`, `type`, `durationMs`, `tokens` (lifetime `{ input, output, total }`), `toolUses`, `result`                     |
-| `subagents:failed`           | Agent errored, stopped, or aborted                      | same as completed + `error`, `status`                                                                                |
-| `subagents:resuming`         | Resume started, from either front door                  | `id`, `type`, `description`                                                                                          |
-| `subagents:resumed`          | Resumed run reached a terminal state (completed/error)  | same as completed + `error`, `status` (`buildEventData` shape) — `status`/`error` discriminate                       |
-| `subagents:steered`          | Steering message sent                                   | `id`, `message`                                                                                                      |
-| `subagents:compacted`        | Agent's session successfully compacted                  | `id`, `type`, `description`, `reason` (`"manual"` / `"threshold"` / `"overflow"`), `tokensBefore`, `compactionCount` |
-| `subagents:settings_loaded`  | Persisted settings applied at extension init            | `settings` (merged global + project)                                                                                 |
-| `subagents:settings_changed` | `/subagents:settings` mutation was applied              | `settings`, `persisted` (`boolean` — `false` on write failure)                                                       |
+| Event                        | When                                                    | Key fields                                                                                                               |
+| ---------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `subagents:created`          | Background agent registered                             | `id`, `type`, `description`, `isBackground`                                                                              |
+| `subagents:started`          | Agent transitions to running (including queued→running) | `id`, `type`, `description`                                                                                              |
+| `subagents:completed`        | Agent finished successfully                             | `id`, `type`, `status`, `turnBudget`, `durationMs`, `tokens` (lifetime `{ input, output, total }`), `toolUses`, `result` |
+| `subagents:failed`           | Agent errored, stopped, or aborted                      | same as completed + `error`, `status`                                                                                    |
+| `subagents:resuming`         | Resume started, from either front door                  | `id`, `type`, `description`                                                                                              |
+| `subagents:resumed`          | Resumed run reached a terminal state (completed/error)  | same as completed + `error`, `status` (`buildEventData` shape) — `status`/`error` discriminate                           |
+| `subagents:steered`          | Steering message sent                                   | `id`, `message`                                                                                                          |
+| `subagents:compacted`        | Agent's session successfully compacted                  | `id`, `type`, `description`, `reason` (`"manual"` / `"threshold"` / `"overflow"`), `tokensBefore`, `compactionCount`     |
+| `subagents:settings_loaded`  | Persisted settings applied at extension init            | `settings` (merged global + project)                                                                                     |
+| `subagents:settings_changed` | `/subagents:settings` mutation was applied              | `settings`, `persisted` (`boolean` — `false` on write failure)                                                           |
 
 `tokens.total` = `input + output + cacheWrite`.
 `cacheRead` is excluded — each turn's `cacheRead` is the cumulative cached prefix re-read on that one API call, so summing per-message would over-count it.
@@ -346,7 +357,7 @@ A spawned agent is a first-class citizen of the runtime: it appears in the backg
 Both return `SubagentRecord`, a by-value snapshot: nothing in it changes after you receive it, and writing to it cannot reach the agent.
 Poll again for fresh data.
 
-The snapshot carries identity (`id`, `type`, `description`), lifecycle status (`status`, `startedAt`, `completedAt`, `result`, `error`), the resolved spawn facts (`isBackground`, `maxTurns`), cumulative metrics (`toolUses`, `turnCount`, `compactionCount`, `lifetimeUsage`), and `outputFile` — the path to the agent's session JSONL, which you can read with Pi's own `parseSessionEntries`.
+The snapshot carries identity (`id`, `type`, `description`), lifecycle status (`status`, `startedAt`, `completedAt`, `result`, `error`), the resolved spawn fact `isBackground`, the current run's `turnBudget`, cumulative metrics (`toolUses`, `compactionCount`, `lifetimeUsage`), and `outputFile` — the path to the agent's session JSONL, which you can read with Pi's own `parseSessionEntries`.
 
 It deliberately withholds momentary activity (the tools running right now, the partial response text) and this package's internal bookkeeping.
 A pulled snapshot of momentary state would be stale on arrival; [decision 0005](docs/decisions/0005-subagent-record-admission-policy.md) records the full policy and what would reopen it.

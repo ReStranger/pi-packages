@@ -63,6 +63,14 @@ describe("SubagentEventsObserver", () => {
 			expect(emit).toHaveBeenCalledWith("subagents:failed", expect.anything());
 		});
 
+		it("persists the run's turn budget on the subagents:record entry", () => {
+			const { observer, appendEntry } = makeObserver();
+			const turnBudget = { maxTurns: 2, used: 3, phase: "warned" } as const;
+			observer.onSubagentCompleted(createTestSubagent({ turnBudget }));
+			// Partial match: the full persisted shape is pinned by the neighboring tests.
+			expect(appendEntry).toHaveBeenCalledWith("subagents:record", expect.objectContaining({ turnBudget }));
+		});
+
 		it("emits subagents:failed for a stopped agent", () => {
 			const { observer, emit } = makeObserver();
 			const record = createTestSubagent({ status: "stopped" });

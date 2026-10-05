@@ -150,7 +150,7 @@ export class AgentTool {
 		// Resume-return delivery edge: the resumed outcome is returned directly.
 		record.markConsumed();
 		return textResult(
-			`Agent ID: ${record.id}${renderStatusNote(record.status)}\n\n` +
+			`Agent ID: ${record.id}${renderStatusNote(record)}\n\n` +
 				renderOutcomeBody(record) +
 				renderOutcomeAddenda(record),
 			buildDetails(detailBase, record),

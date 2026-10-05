@@ -183,7 +183,8 @@ function floorUnparsedUnit(
  * is clamped up to a synthetic `ask` naming the kind that caused it — unless
  * the enumerator established that the floor has no reason left to hold, in
  * which case the unit is resolved by the rules of the command it runs (ADR 0013
- * §11, #803).
+ * §11): its inner command is a proven pure reader (#803), or every wrapper
+ * layer only modifies how that command runs (#963).
  *
  * Only an `allow` reaches here, which is what makes the exemption unable to
  * weaken anything: an explicit `deny` or `ask` on the wrapper is decided before

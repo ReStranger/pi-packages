@@ -1,15 +1,13 @@
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import {
-  isTerminalErrorStatus,
-  type SubagentStatus,
-} from "#src/lifecycle/subagent-state";
+import { isTerminalErrorStatus } from "#src/lifecycle/subagent-state";
+import { wrappedUpAtTurnLimit } from "#src/lifecycle/turn-limits";
 import type {
   NotificationDetails,
   UpdateDetails,
   WorkspaceNoticeDetails,
 } from "#src/observation/notification";
-import { formatMs, formatTokens, formatTurns } from "#src/ui/display";
+import { formatMs, formatTokens, formatTurnBudget } from "#src/ui/display";
 import { GLYPHS } from "#src/ui/glyphs";
 
 /** Narrow theme interface — only the methods the renderer actually calls. */
@@ -48,23 +46,25 @@ export interface StatusPresentation {
 }
 
 /** Decide the icon and status label for a notification's status, once. */
-export function resolveStatusPresentation(status: SubagentStatus): StatusPresentation {
-  if (isTerminalErrorStatus(status))
-    return { iconGlyph: GLYPHS.failure, iconStyle: "error", statusText: status };
-  const statusText = status === "steered" ? "completed (steered)" : "completed";
+export function resolveStatusPresentation(
+  outcome: Pick<NotificationDetails, "status" | "turnBudget">,
+): StatusPresentation {
+  if (isTerminalErrorStatus(outcome.status))
+    return { iconGlyph: GLYPHS.failure, iconStyle: "error", statusText: outcome.status };
+  const statusText = wrappedUpAtTurnLimit(outcome) ? "completed (wrapped up)" : "completed";
   return { iconGlyph: GLYPHS.success, iconStyle: "success", statusText };
 }
 
 /** Fields `buildStatsParts` reads from a `NotificationDetails`. */
 type StatsSource = Pick<
   NotificationDetails,
-  "turnCount" | "maxTurns" | "toolUses" | "totalTokens" | "durationMs"
+  "turnBudget" | "toolUses" | "totalTokens" | "durationMs"
 >;
 
 /** Assemble the stats-line parts (turns, tool uses, tokens, duration), omitting zero fields. */
 export function buildStatsParts(d: StatsSource): string[] {
   const parts: string[] = [];
-  if (d.turnCount > 0) parts.push(formatTurns(d.turnCount, d.maxTurns));
+  if (d.turnBudget) parts.push(formatTurnBudget(d.turnBudget));
   if (d.toolUses > 0) parts.push(`${d.toolUses} tool use${d.toolUses === 1 ? "" : "s"}`);
   if (d.totalTokens > 0) parts.push(formatTokens(d.totalTokens));
   if (d.durationMs > 0) parts.push(formatMs(d.durationMs));
@@ -89,7 +89,7 @@ export function createNotificationRenderer() {
     const d = message.details;
     if (!d) return undefined;
 
-    const { iconGlyph, iconStyle, statusText } = resolveStatusPresentation(d.status);
+    const { iconGlyph, iconStyle, statusText } = resolveStatusPresentation(d);
 
     // Line 1: icon + agent description + status
     let line = `${theme.fg(iconStyle, iconGlyph)} ${theme.bold(d.description)} ${theme.fg("dim", statusText)}`;

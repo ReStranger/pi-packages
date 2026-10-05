@@ -8,8 +8,8 @@ import {
   type CommandWord,
   classifyWrapperWords,
   executedUnitOf,
+  floorExemptionOf,
   inlineShellPayloadIndex,
-  isTransparentWrapper,
   type WrapperKind,
 } from "./wrapper-analysis";
 
@@ -468,9 +468,7 @@ function makeCommandUnit(node: TSNode, scope: UnitScope): BashCommand {
     spellings: homeSpelling === undefined ? undefined : [homeSpelling],
     wrapperKind: classifyWrapperWords(words),
     executedUnit: executedUnitOf(text, words) ?? undefined,
-    floorExemption: isTransparentWrapper(words, redirectedScope(node, scope))
-      ? "core-reader"
-      : undefined,
+    floorExemption: floorExemptionOf(words, redirectedScope(node, scope)),
   });
 }
 

@@ -294,7 +294,7 @@ describe("AgentTool — resume path", () => {
 				resume: "agent-1",
 			});
 
-			expect(result.content[0].text).toContain("aborted \u2014 max turns exceeded, output may be incomplete");
+			expect(result.content[0].text).toContain("aborted \u2014 turn limit reached, output may be incomplete");
 			expect(result.content[0].text).toContain("Half of it");
 		});
 

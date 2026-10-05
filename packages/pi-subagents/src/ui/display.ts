@@ -7,6 +7,7 @@
 
 import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { AgentConfigLookup } from "#src/config/agent-types";
+import type { TurnBudget } from "#src/lifecycle/turn-limits";
 import type { AgentInvocation, SubagentType } from "#src/types";
 import { GLYPHS } from "#src/ui/glyphs";
 
@@ -31,7 +32,7 @@ export interface AgentDetails {
   toolUses: number;
   tokens: string;
   durationMs: number;
-  status: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error" | "background";
+  status: "queued" | "running" | "completed" | "aborted" | "stopped" | "error" | "background";
   /** Human-readable description of what the agent is currently doing. */
   activity?: string;
   /** Current spinner frame index (for animated running indicator). */
@@ -40,18 +41,16 @@ export interface AgentDetails {
   modelName?: string;
   /** Notable config tags (e.g. ["thinking: high", "inherit context"]). */
   tags?: string[];
-  /** Current turn count. */
-  turnCount?: number;
-  /** Effective max turns (undefined = unlimited). */
-  maxTurns?: number;
   agentId?: string;
   error?: string;
+  /** The run's turn budget; absent until its turn loop starts. */
+  turnBudget?: TurnBudget;
 }
 
 // ---- Constants ----
 
 /** Statuses that indicate an error/non-success outcome (used for linger behavior and icon rendering). */
-export const ERROR_STATUSES = new Set(["error", "aborted", "steered", "stopped"]);
+export const ERROR_STATUSES = new Set(["error", "aborted", "stopped"]);
 
 /** Tool name → human-readable action for activity descriptions. */
 const TOOL_DISPLAY: Record<string, string> = {
@@ -103,11 +102,11 @@ export function formatSessionTokens(
   return `${tokenStr} ${theme.fg("dim", "(")}${annot.join(sep)}${theme.fg("dim", ")")}`;
 }
 
-/** Format turn count with optional max limit: "↻5≤30" or "↻5". */
-export function formatTurns(turnCount: number, maxTurns?: number | null): string {
-  return maxTurns != null
-    ? `${GLYPHS.turns}${turnCount}≤${maxTurns}`
-    : `${GLYPHS.turns}${turnCount}`;
+/** Format a turn budget as turns used against the ceiling: "↻5≤30", or "↻5" when unlimited. */
+export function formatTurnBudget(budget: TurnBudget): string {
+  return budget.maxTurns != null
+    ? `${GLYPHS.turns}${budget.used}≤${budget.maxTurns}`
+    : `${GLYPHS.turns}${budget.used}`;
 }
 
 /** Format milliseconds as human-readable duration. */

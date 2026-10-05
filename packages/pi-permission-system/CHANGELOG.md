@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [39.1.0](https://github.com/gotgenes/pi-packages/compare/pi-permission-system-v39.0.4...pi-permission-system-v39.1.0) (2026-10-05)
+
+
+### Features
+
+* **pi-permission-system:** time, timeout, nice, stdbuf, and setsid resolve by the command they run ([8cf8fb0](https://github.com/gotgenes/pi-packages/commit/8cf8fb0e62681f49059f093bd1a1ff4d7fa78ece)), closes [#963](https://github.com/gotgenes/pi-packages/issues/963)
+* **pi-permission-system:** time -p and timeout -v keep the execution-modifier exemption ([#963](https://github.com/gotgenes/pi-packages/issues/963)) ([98157a3](https://github.com/gotgenes/pi-packages/commit/98157a3f1a9033172618a40738ad671a0f5d8604))
+
+### Documentation
+
+* **pi-permission-system:** measure the execution-modifier exemption ([#963](https://github.com/gotgenes/pi-packages/issues/963)) ([157f07a](https://github.com/gotgenes/pi-packages/commit/157f07a69c1f7f8103482ae7d8b6c15116970579))
+* **pi-permission-system:** document the execution-modifier exemption and mark Phase 15's #963 step complete ([03017b3](https://github.com/gotgenes/pi-packages/commit/03017b3422b412fc94afc8fe77d6126889bb4903))
+* **pi-permission-system:** measure the literal-word rule on execution modifiers ([#963](https://github.com/gotgenes/pi-packages/issues/963)) ([1c61a2a](https://github.com/gotgenes/pi-packages/commit/1c61a2a3b4707dc873b927ca84bed4c1a611b97a))
+* **pi-permission-system:** document the literal-word and -- rules for execution modifiers ([#963](https://github.com/gotgenes/pi-packages/issues/963)) ([17270c3](https://github.com/gotgenes/pi-packages/commit/17270c36b40debbddcc04fe3752a760dae62bb94))
+* **pi-permission-system:** note that a modifier's environment assignment may be computed ([#963](https://github.com/gotgenes/pi-packages/issues/963)) ([1ed420e](https://github.com/gotgenes/pi-packages/commit/1ed420e0095e37e76660583db42c6d5c11993103))
+
+## [39.0.4](https://github.com/gotgenes/pi-packages/compare/pi-permission-system-v39.0.3...pi-permission-system-v39.0.4) (2026-10-05)
+
+
+### Bug Fixes
+
+* **pi-permission-system:** show a broken config file's error once, not twice, at session start ([67ddf4f](https://github.com/gotgenes/pi-packages/commit/67ddf4f637bd6f4e15246093dc3d1c459552c7f2)), closes [#953](https://github.com/gotgenes/pi-packages/issues/953)
+* **pi-permission-system:** report a policy file that fails closed mid-session ([100a0d3](https://github.com/gotgenes/pi-packages/commit/100a0d3e1b49c92454163b270df52df7cc78ca1f)), closes [#953](https://github.com/gotgenes/pi-packages/issues/953)
+
 ## [39.0.3](https://github.com/gotgenes/pi-packages/compare/pi-permission-system-v39.0.2...pi-permission-system-v39.0.3) (2026-10-03)
 
 

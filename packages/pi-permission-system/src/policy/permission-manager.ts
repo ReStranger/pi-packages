@@ -62,12 +62,12 @@ type ResolvedPermissions = {
   /**
    * Non-global scopes whose config file failed to load or validate. When
    * non-empty the composed ruleset has been floored allow→ask (#646); the
-   * names also drive the fail-closed notice in {@link getConfigIssues}.
+   * names also drive the fail-closed notice in {@link getPolicyIssues}.
    */
   failClosedScopes: RuleOrigin[];
   /**
    * Top-level permission keys naming Pi MCP tools, relocated onto the `mcp`
-   * surface; they drive the port notice in {@link getConfigIssues}.
+   * surface; they drive the port notice in {@link getPolicyIssues}.
    */
   legacyMcpToolKeys: string[];
 };
@@ -92,7 +92,7 @@ export interface ScopedPermissionManager {
   ): PermissionCheckResult;
   getToolPermission(toolName: string, agentName?: string): PermissionState;
   isToolFullyDenied(toolName: string, agentName?: string): boolean;
-  getConfigIssues(agentName?: string): string[];
+  getPolicyIssues(agentName?: string): string[];
 }
 
 export interface PermissionManagerOptions extends PolicyLoaderOptions {
@@ -158,11 +158,20 @@ export class PermissionManager implements ScopedPermissionManager {
     this.resolvedPermissionsCache.clear();
   }
 
-  getConfigIssues(agentName?: string): string[] {
-    // Trigger a load/resolve to ensure issues are collected.
+  /**
+   * What composing `agentName`'s policy revealed: the fail-closed notice for
+   * a rejected non-global scope and the port notice for relocated MCP tool
+   * keys. Recomputed on every resolve, so a notice disappears once its cause is
+   * fixed.
+   *
+   * A config file's own schema errors are not here: `ConfigStore` loads the
+   * same files through the same `loadUnifiedConfig` and owns reporting them,
+   * so listing them here too showed the operator each one twice (#953).
+   */
+  getPolicyIssues(agentName?: string): string[] {
     const { failClosedScopes, legacyMcpToolKeys } =
       this.resolvePermissions(agentName);
-    const issues = [...this.loader.getConfigIssues()];
+    const issues: string[] = [];
     if (failClosedScopes.length > 0) {
       issues.push(
         `Invalid ${failClosedScopes.join(", ")} configuration detected — ` +

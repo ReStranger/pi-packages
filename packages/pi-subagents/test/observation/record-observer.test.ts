@@ -140,16 +140,13 @@ describe("subscribeSubagentObserver", () => {
     expect(state.activeTools.size).toBe(0);
   });
 
-  it("increments turnCount on turn_end", () => {
+  it("leaves the turn budget to the turn loop on turn_end", () => {
     const session = createMockSession();
     const state = makeState();
     subscribeSubagentObserver(session, state);
 
-    expect(state.turnCount).toBe(1);
     session.emit({ type: "turn_end" });
-    expect(state.turnCount).toBe(2);
-    session.emit({ type: "turn_end" });
-    expect(state.turnCount).toBe(3);
+    expect(state.turnBudget).toBeUndefined();
   });
 
   it("resets responseText on message_start", () => {

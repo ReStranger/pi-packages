@@ -54,6 +54,24 @@ describe("BashProgram", () => {
       ).toContain("/etc/hosts");
     });
 
+    describe("a redirect behind an execution modifier", () => {
+      // The modifier exemption drops the floor's redirect refusal because the
+      // destination is projected here whatever the floor decides (#963).
+      it.each(["timeout 5 pnpm test > /tmp/x", "pnpm test > /tmp/x"])(
+        "projects the destination of %s as a syntax-proven write",
+        async (command) => {
+          const program = await BashProgram.parse(command, normalizer);
+          expect(
+            program
+              .externalAccesses()
+              .map(({ path, effect }) => ({ path: path.value(), effect })),
+          ).toEqual([
+            { path: "/tmp/x", effect: { effect: "write", source: "syntax" } },
+          ]);
+        },
+      );
+    });
+
     describe("the rest of a heredoc's line", () => {
       it("projects a tail redirect's target with its operator's effect", async () => {
         const program = await BashProgram.parse(

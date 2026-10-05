@@ -169,14 +169,13 @@ describe("formatAgentReport", () => {
 			makeReport({ status: "aborted", result: "Half of the inv" }),
 		);
 
-		expect(text).toContain("aborted \u2014 max turns exceeded, output may be incomplete");
+		expect(text).toContain("aborted \u2014 turn limit reached, output may be incomplete");
 		expect(text).toContain("Half of the inv");
 	});
 
-	it("names a turn-limit wrap-up", () => {
-		expect(formatAgentReport(makeReport({ status: "steered" }))).toContain(
-			"wrapped up \u2014 reached turn limit",
-		);
+	it("names a turn-limit wrap-up on a completed run the harness warned", () => {
+		const report = makeReport({ status: "completed", turnBudget: { maxTurns: 2, used: 3, phase: "warned" } });
+		expect(formatAgentReport(report)).toContain("Status: completed (wrapped up \u2014 after turn-budget warning) |");
 	});
 
 	it("adds no status note for a plain completion", () => {

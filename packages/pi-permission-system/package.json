@@ -1,6 +1,6 @@
 {
   "name": "@restranger/pi-permission-system",
-  "version": "39.0.3",
+  "version": "39.1.0",
   "description": "Permission enforcement extension for the Pi coding agent.",
   "type": "module",
   "exports": {

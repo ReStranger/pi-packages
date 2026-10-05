@@ -530,15 +530,15 @@ describe("PermissionResolver", () => {
     });
   });
 
-  describe("getConfigIssues", () => {
-    it("delegates to permissionManager.getConfigIssues", () => {
+  describe("getPolicyIssues", () => {
+    it("delegates to permissionManager.getPolicyIssues", () => {
       const pm = makePermissionManager();
-      vi.mocked(pm.getConfigIssues).mockReturnValue(["issue-1"]);
+      vi.mocked(pm.getPolicyIssues).mockReturnValue(["issue-1"]);
       const { resolver } = makeResolver(pm);
 
-      const result = resolver.getConfigIssues("agent-1");
+      const result = resolver.getPolicyIssues("agent-1");
 
-      expect(pm.getConfigIssues).toHaveBeenCalledWith("agent-1");
+      expect(pm.getPolicyIssues).toHaveBeenCalledWith("agent-1");
       expect(result).toEqual(["issue-1"]);
     });
   });

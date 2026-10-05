@@ -23,7 +23,6 @@ export interface SubagentObserverOptions {
  * - `message_start` → `state.resetResponseText()`
  * - `message_update` (text_delta) → `state.appendResponseText(delta)`
  * - `message_end` (assistant, with usage) → `state.addUsage(…)`
- * - `turn_end` → `state.incrementTurnCount()`
  * - `compaction_end` (not aborted) → `state.incrementCompactions()`, call `onCompact`
  *
  * @returns An unsubscribe function.
@@ -52,10 +51,6 @@ export function subscribeSubagentObserver(
       event.assistantMessageEvent.type === "text_delta"
     ) {
       state.appendResponseText(event.assistantMessageEvent.delta);
-    }
-
-    if (event.type === "turn_end") {
-      state.incrementTurnCount();
     }
 
     if (event.type === "message_end" && event.message.role === "assistant") {

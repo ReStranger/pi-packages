@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [23.0.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v22.0.0...pi-subagents-v23.0.0) (2026-10-03)
+
+
+### Features
+
+* **pi-subagents:** report the turn budget on finished subagents ([5607009](https://github.com/gotgenes/pi-packages/commit/560700977651554635aadeb9b2717a8d5ae6eae9)), closes [#1021](https://github.com/gotgenes/pi-packages/issues/1021)
+* **pi-subagents:** **breaking:** report a run that wraps up at its turn limit as completed ([d457702](https://github.com/gotgenes/pi-packages/commit/d4577024e37249f3a11fdb4ef7abb01d0424597b)), closes [#1021](https://github.com/gotgenes/pi-packages/issues/1021)
+* **pi-subagents:** **breaking:** report the turn budget on subagents:child:completed ([1ec3240](https://github.com/gotgenes/pi-packages/commit/1ec32405b302a93d5dbf3318035a1dc1f8dce047)), closes [#1021](https://github.com/gotgenes/pi-packages/issues/1021)
+* **pi-subagents:** **breaking:** stop a subagent at max_turns, after warning it while wrap-up turns remain ([0bb9cc7](https://github.com/gotgenes/pi-packages/commit/0bb9cc79475fe5d172f7d06cf7ddd0698a6d38ac)), closes [#1022](https://github.com/gotgenes/pi-packages/issues/1022)
+* **pi-subagents:** describe a warned or stopped run by its turn budget ([a013f1d](https://github.com/gotgenes/pi-packages/commit/a013f1df8fc8e837e2ae7ca9692de1173bffbfca)), closes [#1022](https://github.com/gotgenes/pi-packages/issues/1022)
+* **pi-subagents:** track a running subagent's turn budget live ([71a5223](https://github.com/gotgenes/pi-packages/commit/71a5223f771bb553d5bf014eb93193fc9779ee9e)), closes [#1022](https://github.com/gotgenes/pi-packages/issues/1022)
+* **pi-subagents:** **breaking:** give a resumed subagent a fresh turn budget ([4411a80](https://github.com/gotgenes/pi-packages/commit/4411a8086983a55a75307a2905092237accb410e)), closes [#1022](https://github.com/gotgenes/pi-packages/issues/1022)
+* **pi-subagents:** **breaking:** report turns only through turnBudget ([9ac16d3](https://github.com/gotgenes/pi-packages/commit/9ac16d304a07475c3fb2f93efe87f6ca40667376)), closes [#1022](https://github.com/gotgenes/pi-packages/issues/1022)
+* **pi-subagents:** **breaking:** run subagents for at least two turns and warn below that ([62e0977](https://github.com/gotgenes/pi-packages/commit/62e0977834f4af4de241b79ff8fe125f7dcbf12b)), closes [#1022](https://github.com/gotgenes/pi-packages/issues/1022)
+
+### Documentation
+
+* **pi-subagents:** document the turn budget outcome and correct the lifecycle diagram ([dbed2c9](https://github.com/gotgenes/pi-packages/commit/dbed2c92873ccb797e61d971f58d55748927d03e)), closes [#1021](https://github.com/gotgenes/pi-packages/issues/1021)
+* **pi-subagents:** document the turn ceiling and live turn budget ([4624cf3](https://github.com/gotgenes/pi-packages/commit/4624cf3e07997beba779056f50942ad656905ffc)), closes [#1022](https://github.com/gotgenes/pi-packages/issues/1022)
+
 ## [22.0.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v21.9.4...pi-subagents-v22.0.0) (2026-10-03)
 
 

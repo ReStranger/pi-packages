@@ -8,6 +8,7 @@
  */
 
 import type { ResumeRefusal, SubagentStatus } from "#src/lifecycle/subagent";
+import type { TurnBudget } from "#src/lifecycle/turn-limits";
 import {
 	renderOutcomeAddenda,
 	renderOutcomeBody,
@@ -29,6 +30,8 @@ export interface AgentReport {
 	description: string;
 	result: string | undefined;
 	error: string | undefined;
+	/** The run's turn limit and its use; absent when no limit applied. */
+	turnBudget?: TurnBudget;
 	/** Whether the agent was stopped before the limiter ever admitted it. */
 	stoppedWhileQueued: boolean;
 	/** Present only when verbose was requested and a conversation is available. */
@@ -80,7 +83,7 @@ export function renderReportBody(report: AgentReport): string {
 export function formatAgentReport(report: AgentReport): string {
 	let output =
 		`Agent: ${report.id}\n` +
-		`Type: ${report.displayName} | Status: ${report.status}${renderStatusNote(report.status)} | ${renderStatsParts(report).join(" | ")}\n` +
+		`Type: ${report.displayName} | Status: ${report.status}${renderStatusNote(report)} | ${renderStatsParts(report).join(" | ")}\n` +
 		(report.model ? `Model: ${report.model}\n` : "") +
 		`Description: ${report.description}\n\n`;
 	output += renderReportBody(report);

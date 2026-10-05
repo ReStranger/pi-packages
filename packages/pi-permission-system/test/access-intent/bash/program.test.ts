@@ -1286,16 +1286,11 @@ describe("BashProgram", () => {
         ["sudo aws s3 ls", "sudo aws s3 ls", "aws s3 ls"],
         ["env FOO=bar aws s3 ls", "env FOO=bar aws s3 ls", "aws s3 ls"],
         ["xargs rm -rf", "xargs rm -rf", "rm -rf"],
-        ["time aws s3 ls", "time aws s3 ls", "aws s3 ls"],
         ["nohup aws s3 ls", "nohup aws s3 ls", "aws s3 ls"],
-        ["timeout 10 aws s3 ls", "timeout 10 aws s3 ls", "aws s3 ls"],
-        ["nice -n 10 aws s3 ls", "nice -n 10 aws s3 ls", "aws s3 ls"],
         ["/usr/bin/sudo aws s3 ls", "/usr/bin/sudo aws s3 ls", "aws s3 ls"],
         // Exec-capable rewrites and prefix wrappers (#575).
         ["parallel rm ::: x", "parallel rm ::: x", "rm ::: x"],
         ["doas aws s3 ls", "doas aws s3 ls", "aws s3 ls"],
-        ["setsid aws s3 ls", "setsid aws s3 ls", "aws s3 ls"],
-        ["stdbuf -oL aws s3 ls", "stdbuf -oL aws s3 ls", "aws s3 ls"],
         ["flock /tmp/lock aws s3 ls", "flock /tmp/lock aws s3 ls", "aws s3 ls"],
       ])(
         "flags %s as an indirection wrapper",
@@ -1323,6 +1318,29 @@ describe("BashProgram", () => {
               wrapperKind: "indirection",
               executedUnit,
               floorExemption: "core-reader",
+            },
+          ]);
+        },
+      );
+
+      // Wrappers that change only how the command runs, so the unit inherits
+      // the inner command's verdict rather than flooring (#963).
+      it.each([
+        ["time aws s3 ls", "aws s3 ls"],
+        ["timeout 10 aws s3 ls", "aws s3 ls"],
+        ["nice -n 10 aws s3 ls", "aws s3 ls"],
+        ["setsid aws s3 ls", "aws s3 ls"],
+        ["stdbuf -oL aws s3 ls", "aws s3 ls"],
+      ])(
+        "flags %s as an indirection wrapper that only modifies execution",
+        async (command, executedUnit) => {
+          const program = await BashProgram.parse(command, normalizer);
+          expect(program.commands()).toEqual([
+            {
+              text: command,
+              wrapperKind: "indirection",
+              executedUnit,
+              floorExemption: "execution-modifier",
             },
           ]);
         },
@@ -1386,6 +1404,8 @@ describe("BashProgram", () => {
         ["sudo aws s3 rm", "aws s3 rm"],
         ["sudo -u root aws s3 rm", "aws s3 rm"],
         ["timeout 10 grep foo", "grep foo"],
+        ["timeout -- 5 sudo rm x", "rm x"],
+        ["timeout -s KILL -- 5 rm x", "rm x"],
         ["find . -name x -exec grep foo {} \\;", "grep foo {}"],
         ["sudo timeout 5 xargs grep foo", "grep foo"],
       ])("names what %s actually runs", async (command, executedUnit) => {
@@ -1437,6 +1457,41 @@ describe("BashProgram", () => {
         ["xargs awk -f p.awk", "`-f` withdraws awk's read claim"],
       ])("does not exempt %s (%s)", async (command) => {
         await expect(exemptions(command)).resolves.toEqual([undefined]);
+      });
+
+      it("exempts an execution modifier whose statement redirects to a file", async () => {
+        await expect(
+          exemptions("time pnpm run lint >/tmp/lintout.txt 2>&1"),
+        ).resolves.toEqual(["execution-modifier"]);
+      });
+
+      it.each([
+        [
+          "time (rm -rf /tmp/x)",
+          "the grammar reads the subshell as an argument",
+        ],
+        ["timeout --sig KILL 5 rm -rf /", "an abbreviation hides its value"],
+        ["time sudo rm -rf x", "a peeled layer changes who runs it"],
+        ["timeout {5,sudo} rm x", "brace expansion adds a word"],
+        ["timeout $D rm x", "an unquoted expansion may split"],
+        ['timeout "$D" rm x', "a computed operand is not proven"],
+        ["timeout $(echo 5 sudo) rm x", "a substitution may split"],
+        ["timeout * rm x", "a glob may expand to several words"],
+        ["nice -n $N rm x", "an option value may split"],
+        ["nice -n$N rm x", "an attached value may split"],
+        ["stdbuf -o$M rm x", "an attached value may split"],
+      ])("does not exempt the modifier unit of %s (%s)", async (command) => {
+        const [first] = await exemptions(command);
+        expect(first).toBeUndefined();
+      });
+
+      it("does not exempt a brace group after time", async () => {
+        // The grammar has no `time` keyword: the group's words become the
+        // `time` unit's arguments and the closing brace a unit of its own.
+        await expect(exemptions("time { rm -rf /tmp/x; }")).resolves.toEqual([
+          undefined,
+          undefined,
+        ]);
       });
 
       describe("a withdrawing option spelled with quotes", () => {

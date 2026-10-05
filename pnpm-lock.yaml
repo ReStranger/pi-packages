@@ -99,11 +99,11 @@ importers:
         specifier: 'catalog:'
         version: 2.5.11
       '@earendil-works/pi-coding-agent':
-        specifier: 0.79.1
-        version: 0.79.1(supports-color@7.2.0)(ws@8.20.1)(zod@4.4.3)
+        specifier: 1.0.0
+        version: 1.0.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(supports-color@7.2.0)(zod@4.4.3)
       '@earendil-works/pi-tui':
-        specifier: 0.79.1
-        version: 0.79.1
+        specifier: 1.0.0
+        version: 1.0.0
       '@types/node':
         specifier: 'catalog:'
         version: 22.19.19
@@ -126,8 +126,8 @@ importers:
         specifier: 'catalog:'
         version: 2.5.11
       '@earendil-works/pi-coding-agent':
-        specifier: 0.79.1
-        version: 0.79.1(supports-color@7.2.0)(ws@8.20.1)(zod@4.4.3)
+        specifier: 1.0.0
+        version: 1.0.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(supports-color@7.2.0)(zod@4.4.3)
       '@types/node':
         specifier: 'catalog:'
         version: 22.19.19
@@ -179,7 +179,7 @@ importers:
         version: 0.84.4(supports-color@7.2.0)(ws@8.20.1)(zod@4.4.3)
       '@gotgenes/pi-permission-system':
         specifier: 27.0.0
-        version: 27.0.0(@earendil-works/pi-coding-agent@0.84.4(supports-color@7.2.0)(ws@8.20.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.4)
+        version: 27.0.0(@earendil-works/pi-coding-agent@0.84.4(supports-color@7.2.0)(ws@8.20.1)(zod@4.4.3))(@earendil-works/pi-tui@1.0.0)
       '@types/node':
         specifier: 'catalog:'
         version: 22.19.19
@@ -3753,10 +3753,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@gotgenes/pi-permission-system@27.0.0(@earendil-works/pi-coding-agent@0.84.4(supports-color@7.2.0)(ws@8.20.1)(zod@4.4.3))(@earendil-works/pi-tui@0.84.4)':
+  '@gotgenes/pi-permission-system@27.0.0(@earendil-works/pi-coding-agent@0.84.4(supports-color@7.2.0)(ws@8.20.1)(zod@4.4.3))(@earendil-works/pi-tui@1.0.0)':
     dependencies:
       '@earendil-works/pi-coding-agent': 0.84.4(supports-color@7.2.0)(ws@8.20.1)(zod@4.4.3)
-      '@earendil-works/pi-tui': 0.84.4
+      '@earendil-works/pi-tui': 1.0.0
       tree-sitter-bash: 0.25.1
       web-tree-sitter: 0.26.9
       zod: 4.4.3

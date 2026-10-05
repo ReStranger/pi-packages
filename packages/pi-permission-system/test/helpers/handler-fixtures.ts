@@ -130,6 +130,16 @@ export function makeConfigIssueReporter() {
   return { report: vi.fn<() => void>() };
 }
 
+/**
+ * A `PolicyIssueReporting` double for the session-start and agent-prep
+ * handlers, which each hand it the agent name they resolved.
+ *
+ * Unannotated return type so callers keep full `vi.fn()` access on `report`.
+ */
+export function makePolicyIssueReporter() {
+  return { report: vi.fn<(agentName: string | undefined) => void>() };
+}
+
 export function makeToolCallEvent(
   toolName: string,
   extraFields: Record<string, unknown> = {},

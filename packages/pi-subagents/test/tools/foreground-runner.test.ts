@@ -281,6 +281,35 @@ describe("runForeground", () => {
 		});
 	});
 
+	it("streams the live turn budget of the record once its session exists", async () => {
+		const running = createTestSubagent({
+			status: "running",
+			completedAt: undefined,
+			turnBudget: { maxTurns: 10, used: 8, phase: "warned" },
+		});
+		const { promise, resolve } = Promise.withResolvers<Subagent>();
+		const spawnAndWait = vi.fn(
+			(_snapshot: unknown, _type: unknown, _prompt: unknown, options: { observer?: { onSessionCreated?: (agent: Subagent) => void } }) => {
+				options.observer?.onSessionCreated?.(running);
+				return promise;
+			},
+		);
+		const deps = createToolDeps({ manager: { ...createToolDeps().manager, spawnAndWait } });
+		const onUpdate = vi.fn();
+		const runPromise = runForeground(deps.manager, makeParams(), undefined, onUpdate);
+
+		await vi.advanceTimersByTimeAsync(100);
+		// Partial match: the streamed details also carry a spinner frame and a wall-clock duration.
+		expect(onUpdate).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				details: expect.objectContaining({ turnBudget: { maxTurns: 10, used: 8, phase: "warned" } }),
+			}),
+		);
+
+		resolve(createTestSubagent({ result: "done" }));
+		await runPromise;
+	});
+
 	it("clears spinner interval on error and does not leave it running", async () => {
 		const deps = createToolDeps({
 			manager: {

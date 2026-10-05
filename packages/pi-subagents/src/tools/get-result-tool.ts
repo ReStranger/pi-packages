@@ -98,6 +98,7 @@ export class GetResultTool {
 			description: record.description,
 			result: outcome.result,
 			error: outcome.error,
+			turnBudget: outcome.turnBudget,
 			stoppedWhileQueued: record.stoppedWhileQueued,
 			conversation: verbose ? record.getConversation() : undefined,
 			// Transcript pointer: lets the parent read the full session from disk,
@@ -131,6 +132,7 @@ export class GetResultTool {
 			duration: formatDuration(outcome.startedAt, outcome.completedAt),
 			preview: buildPreview(outcome.result),
 			error: outcome.error,
+			turnBudget: outcome.turnBudget,
 			verbose,
 			transcriptPath: record.outputFile,
 			modelName: modelLabel(record.model),
@@ -212,6 +214,7 @@ function liveOutcome(record: Subagent): SettledOutcome {
 		pendingQuestion: record.pendingQuestion,
 		workspaceNotice: record.workspaceNotice,
 		runUpdates: record.runUpdates,
+		turnBudget: record.turnBudget,
 	};
 }
 

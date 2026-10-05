@@ -221,12 +221,12 @@ describe("assembleWidgetState", () => {
 });
 
 describe("AgentWidget — projection reads activity off Subagent records", () => {
-	it("surfaces turnCount, activeTools, and responseText from the record via renderWidget", () => {
+	it("surfaces the turn budget, activeTools, and responseText from the record via renderWidget", () => {
 		const record = createTestSubagent({
 			status: "running",
 			completedAt: undefined,
 			startedAt: Date.now() - 100,
-			turnCount: 3,
+			turnBudget: { maxTurns: 10, used: 3, phase: "within" },
 			activeTools: ["read"],
 			isBackground: true,
 		});
@@ -247,8 +247,8 @@ describe("AgentWidget — projection reads activity off Subagent records", () =>
 		expect(renderFn).toBeDefined();
 		const lines = renderFn!(stubTui(), stubTheme()).render();
 		const allText = lines.join("\n");
-		// Turn 3 from the record should appear
-		expect(allText).toContain("↻3");
+		// The record's turn budget should appear
+		expect(allText).toContain("↻3≤10");
 		// Active tool "read" → "reading…"
 		expect(allText).toContain("reading");
 	});
@@ -275,6 +275,29 @@ describe("AgentWidget — projection reads activity off Subagent records", () =>
 
 		expect(renderFn).toBeDefined();
 		expect(renderFn!(stubTui(), stubTheme()).render().join("\n")).toContain("anthropic/claude-sonnet-5");
+	});
+
+	it("surfaces the record's turn budget as a turn-limit wrap-up via renderWidget", () => {
+		const record = createTestSubagent({
+			status: "completed",
+			completedAt: Date.now(),
+			isBackground: true,
+			turnBudget: { maxTurns: 2, used: 3, phase: "warned" },
+		});
+		const manager = { listAgents: () => [record] } as unknown as SubagentManager;
+		const widget = new AgentWidget(manager, new AgentTypeRegistry(() => new Map()));
+
+		let renderFn: ((tui: unknown, theme: unknown) => { render(): string[] }) | undefined;
+		widget.setUICtx({
+			setStatus: () => {},
+			setWidget: (_key, content) => {
+				if (typeof content === "function") renderFn = content as typeof renderFn;
+			},
+		});
+		widget.update();
+
+		expect(renderFn).toBeDefined();
+		expect(renderFn!(stubTui(), stubTheme()).render().join("\n")).toContain("(budget warning)");
 	});
 });
 
