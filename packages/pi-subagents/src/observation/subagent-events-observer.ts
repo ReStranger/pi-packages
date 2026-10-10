@@ -1,5 +1,6 @@
 import type { SubagentManagerObserver } from "#src/lifecycle/subagent-manager";
 import { buildEventData, type NotificationSystem } from "#src/observation/notification";
+import { SUBAGENT_RECORD_ENTRY, toPersistedRecord } from "#src/persisted-record";
 import type { CompactionInfo, Subagent } from "#src/types";
 
 /** Emit callback — a subset of `pi.events.emit`. */
@@ -86,17 +87,7 @@ export class SubagentEventsObserver implements SubagentManagerObserver {
 	 * not owned here.
 	 */
 	private persistAndNotify(record: Subagent): void {
-		this.appendEntry("subagents:record", {
-			id: record.id,
-			type: record.type,
-			description: record.description,
-			status: record.status,
-			result: record.result,
-			error: record.error,
-			turnBudget: record.turnBudget,
-			startedAt: record.startedAt,
-			completedAt: record.completedAt,
-		});
+		this.appendEntry(SUBAGENT_RECORD_ENTRY, toPersistedRecord(record));
 		this.notifications.sendCompletion(record);
 	}
 

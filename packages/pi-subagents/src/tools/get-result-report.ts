@@ -59,6 +59,20 @@ export interface AgentReport {
 	 * wait returned, so the agent is running again.
 	 */
 	resumedWhileWaiting?: boolean;
+	/** The bound, in seconds, of a wait that ended at it with the agent still running. */
+	waitExpiredAfter?: number;
+	/** What a running agent is doing and when it last moved; absent for any other status. */
+	progress?: ReportProgress;
+}
+
+/** A running agent's progress facts, pre-formatted for the report. */
+interface ReportProgress {
+	/** What the agent is doing now, as the widget words it. */
+	activity: string;
+	/** Turns the run has completed; absent before its turn loop reports a budget. */
+	turns: number | undefined;
+	/** Pre-formatted time since the run's last session event. */
+	sinceLastProgress: string;
 }
 
 /** Assemble the stats parts: Tool uses / tokens? / Context? / Compactions? / Duration. */
@@ -85,6 +99,7 @@ export function formatAgentReport(report: AgentReport): string {
 		`Agent: ${report.id}\n` +
 		`Type: ${report.displayName} | Status: ${report.status}${renderStatusNote(report)} | ${renderStatsParts(report).join(" | ")}\n` +
 		(report.model ? `Model: ${report.model}\n` : "") +
+		(report.progress ? `${renderProgressLine(report.progress)}\n` : "") +
 		`Description: ${report.description}\n\n`;
 	output += renderReportBody(report);
 	output += renderOutcomeAddenda(report);
@@ -93,6 +108,9 @@ export function formatAgentReport(report: AgentReport): string {
 			"\n\nThis agent was resumed before this wait returned and is running again \u2014 " +
 			"call get_subagent_result for that run's outcome.";
 	}
+	if (report.waitExpiredAfter !== undefined) {
+		output += renderWaitExpired(report.waitExpiredAfter);
+	}
 	if (report.conversation) {
 		output += `\n\n--- Agent Conversation ---\n${report.conversation}`;
 	}
@@ -100,4 +118,25 @@ export function formatAgentReport(report: AgentReport): string {
 		output += `\n\nFull transcript available at: ${report.transcriptPath}`;
 	}
 	return output;
+}
+
+/**
+ * Says the bound ended the wait, not the agent, and why waiting again on
+ * unchanged progress is the wrong next move: a model that reads bash's timeout
+ * as a kill would otherwise assume the agent stopped, or poll it forever.
+ */
+function renderWaitExpired(seconds: number): string {
+	return (
+		`\n\nThis wait ended after its ${seconds}s timeout. The agent was not stopped and is still running.\n` +
+		"If its progress has not changed since your last check, waiting again will not unstick it: " +
+		"read its transcript, steer it with steer_subagent, or tell the user it appears stuck."
+	);
+}
+
+/** One line saying what a running agent is doing and how long since it last moved. */
+function renderProgressLine(progress: ReportProgress): string {
+	const parts = [`Progress: ${progress.activity}`];
+	if (progress.turns !== undefined) parts.push(`Turns: ${progress.turns}`);
+	parts.push(`Last progress: ${progress.sinceLastProgress} ago`);
+	return parts.join(" | ");
 }

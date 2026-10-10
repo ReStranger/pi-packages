@@ -56,3 +56,47 @@ Co-authored-by: Matt Van Horn <455140+mvanhorn@users.noreply.github.com>
 
 The ship-stage close comment on #948 / PR #993 thanks @mvanhorn by name and links the landed SHA(s).
 Reference the PR as `Refs #993`, never `Closes #993`.
+
+## Stage: Ship (2026-10-05T23:39:52Z)
+
+### Session summary
+
+Same session as the PR Review.
+Pushed one maintainer commit (`b25b7050`) onto the contributor's branch trimming the tool description, README, and the package skill's "sole external binary" line, approved the fork CI run, pushed the triage note, and rebase-merged PR #993 (contributor commit `38d9adb1`).
+CI on `main` passed, #948 closed with a credited comment, PR #993 got a thank-you comment, and `pi-github-tools` 6.1.0 released.
+
+## Stage: Final Retrospective (2026-10-05T23:39:52Z)
+
+### Session summary
+
+One session took third-party PR #993 from review through release: verify gate, scratch-worktree checks, a measured false-positive sweep, maintainer fixups on the contributor's branch, rebase-merge, close, and release of `pi-github-tools` 6.1.0.
+No rework was needed; the one blemish is a changelog entry that shipped unscoped and unlinked.
+
+### Observations
+
+#### What went well
+
+- Measuring the regex against real data settled a design question the PR left implicit.
+  Running the PR's pattern over the operator's comments on 300 closed issues found 783 candidate tokens, 14 unresolvable (mostly genuine fabrications), and three all-digit tokens that are real SHAs, which ruled out the tempting "skip digit-only tokens" tweak before it was proposed.
+- The `/pr-review` "push fixups onto the contributor's branch, then `gh pr merge --rebase`" ending worked end to end for the first time here: `maintainerCanModify` was `true`, the fork push re-triggered an `action_required` CI run that one `approve` call released, and `main` stayed linear with Matt's authorship on `38d9adb1`.
+
+#### What caused friction (agent side)
+
+- `missing-context` — the adopt-as-is review checklist did not check the contributor's commit header.
+  `38d9adb1` is `feat: refuse issue-close comments …` with no `(pi-github-tools)` scope and no issue reference, so the 6.1.0 `CHANGELOG.md` lists the feature unscoped with no `#948` link, while the trailing `docs` commit carries the `closes #948` link.
+  Release scoping is by path, so the version bump was still correct.
+  Impact: a cosmetic changelog blemish that is now permanent; no rework.
+
+#### What caused friction (user side)
+
+- "Let's proceed forward" after the review summary covered pushing fixups, merging, closing, and releasing in one turn.
+  It worked here because the summary named `/ship #948` as the next step, but the landing went through `/ship`'s steps without the template being invoked; naming `/ship 948` explicitly would have loaded the template rather than relying on the agent to read it from disk.
+
+### Diagnostic details
+
+- **Feedback-loop gap analysis** — `pnpm run check`, `pnpm run lint`, and the package tests ran on the PR head before evaluation and again after the fixup edits, before committing; CI ran on both the fork head and `main`.
+  No gap.
+
+### Changes made
+
+1. `.pi/prompts/pr-review.md`: the adopt-as-is ending now checks each contributor commit header for `type(<pkg>):` and names the two remedies (reword on the branch, or `--squash` with a conforming subject plus `Co-authored-by:`).

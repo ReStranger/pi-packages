@@ -1,6 +1,6 @@
 {
   "name": "@restranger/pi-subagents",
-  "version": "23.0.0",
+  "version": "23.4.0",
   "type": "module",
   "exports": {
     ".": {
@@ -86,6 +86,6 @@
       "./src/index.ts"
     ],
     "video": "https://github.com/ReStranger/pi-subagents/raw/main/media/demo.mp4",
-    "image": "https://github.com/ReStranger/pi-subagents/raw/main/media/screenshot.png"
+    "image": "https://raw.githubusercontent.com/ReStranger/pi-packages/main/packages/pi-subagents/docs/assets/demo.webp"
   }
 }

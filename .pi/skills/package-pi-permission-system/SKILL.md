@@ -51,6 +51,7 @@ Run `pnpm --silent fallow guard <file>` before adding a cross-directory import: 
   Every surface resolves through the one multi-value evaluator, `evaluateAnyValue` (#928) — rule position decides, and candidate order decides only which name the decision is reported under in `PermissionCheckResult.target`.
   Do not reintroduce a per-surface evaluator: `mcp` targets and a bash command unit's `spellings` are the multi-candidate cases, and a first-candidate-wins scan there let a catch-all mask a later rule.
 - A bash command unit's spellings come from the program analysis, never the matcher: `compileWildcardPattern` expands a home prefix on the pattern only, and `ShellVariables.spellHomeAtStart` spells the value side only while the program leaves `HOME` alone, keeping the rest verbatim (never `expandHomePath`, whose `join` normalizes `..` across a command's arguments).
+  The second producer is the argument spelling: `BashPathResolver` records each whole-argument token's absolute `AccessPath.value()` by source span, and `readCommandUnit` swaps it in for every non-computed word; a glob, a non-absolute value, and a salvaged fragment's token are never spelled, so the enumerator never invents a path the resolver did not resolve.
 - The four path layers (`path`, `external_directory`, per-tool, `bash`) compose with **most-restrictive-wins** across surfaces: a more-permissive rule on one surface cannot loosen a more-restrictive rule on another (`ask` > `allow`).
   So a `path` allow cannot suppress an `external_directory: ask` prompt — allow outside-CWD directories on `external_directory`, not `path`.
 - `path` and `external_directory` each carry a **read/write axis** (ADR 0013 §3–§4, Refs #806), and the two directions are independent bits, not tiers — a `path_write` allow grants no read, a `path_read` deny floors no write.
@@ -329,6 +330,8 @@ The bash `external_directory` gate only sees tokens that `classifyTokenAsPathCan
 The classifiers, the probe, the option-value and statement-operand walkers, and their constraints are ADR 0009 (`docs/decisions/0009-bash-path-projection-completeness-contract.md`) and the `token-classification.ts`, `shell-variable-expansion.ts`, `token-collection.ts`, and `bash-path-resolver.ts` entries in `docs/architecture/architecture.md`.
 
 A predicate whose `false` lets a bash word skip a guard ("cannot lead with `-`", "is one word") is derived from bash's expansion rules, not the parse tree's node shapes: a quoted `"$@"`, an indirect `"${!a}"`, and a nameref (`declare -n`) each split with nothing in their node to show it, and `~` follows the inherited `HOME`, or on bash 3.2 (Pi's macOS `/bin/bash`) one the command reassigns.
+
+A `GetoptGrammar` row's arity is measured by running the option against the binary both separate (`--opt v`) and attached (`--opt=v`, `-ov`), never read off `--help`: GNU `xargs` prints `-L, --max-lines=MAX-LINES`, but its long form takes only an attached value.
 
 When a plan or test asserts a specific bash repro string, trace the token through the classifier and path normalization first — an issue's headline repro can describe a symptom whose literal input never reaches the gate being changed, and normalization re-expands a leading `~`/`$HOME` the classifier left literal.
 

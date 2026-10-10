@@ -369,6 +369,98 @@ describe("subagent registry sharing across factory instances", () => {
     rmSync(externalDir, { recursive: true, force: true });
   });
 
+  it("forwards the floor that raised a child's bash ask", async () => {
+    writeGlobalConfig({ permission: { "*": "allow" } });
+
+    const childCwd = mkdtempSync(join(tmpdir(), "pi-perm-child-cwd-"));
+    const forwardingDir = join(agentDir, "sessions", "permission-forwarding");
+    const parentSessionId = "parent-session-floor";
+    const childSessionId = "child-session-floor";
+
+    const parentBus = createEventBus();
+    const childBus = createEventBus();
+    piPermissionSystemExtension(
+      makeFakePi({ events: parentBus }) as unknown as ExtensionAPI,
+    );
+    const childPi = makeFakePi({ events: childBus, toolNames: ["bash"] });
+    piPermissionSystemExtension(childPi as unknown as ExtensionAPI);
+    parentBus.emit(SUBAGENT_CHILD_SESSION_CREATED, {
+      sessionId: childSessionId,
+      parentSessionId,
+    });
+    getServingSessionRegistry().markServing(parentSessionId);
+
+    // Under a `*` allow the wrapper floor alone raises this ask; the parent
+    // cannot recompute it, so it has to ride the request.
+    const firePromise = childPi.fire(
+      "tool_call",
+      {
+        toolName: "bash",
+        toolCallId: "child-floored-bash",
+        input: { command: "sudo rm x" },
+      },
+      makeChildCtx(childCwd, childSessionId),
+    );
+
+    const request = await approveForwardedRequest(
+      forwardingDir,
+      parentSessionId,
+    );
+    expect(request.accessIntent?.surface).toBe("bash");
+    expect(request.accessIntent?.matchValues).toEqual(["sudo rm x"]);
+    expect(request.accessIntent?.floor).toBe("<indirection-bash-wrapper>");
+
+    await firePromise;
+    rmSync(childCwd, { recursive: true, force: true });
+  });
+
+  it("forwards every unit a child's bash chain left asking", async () => {
+    writeGlobalConfig({ permission: { "*": "allow", bash: { "*": "ask" } } });
+
+    const childCwd = mkdtempSync(join(tmpdir(), "pi-perm-child-cwd-"));
+    const forwardingDir = join(agentDir, "sessions", "permission-forwarding");
+    const parentSessionId = "parent-session-units";
+    const childSessionId = "child-session-units";
+
+    const parentBus = createEventBus();
+    const childBus = createEventBus();
+    piPermissionSystemExtension(
+      makeFakePi({ events: parentBus }) as unknown as ExtensionAPI,
+    );
+    const childPi = makeFakePi({ events: childBus, toolNames: ["bash"] });
+    piPermissionSystemExtension(childPi as unknown as ExtensionAPI);
+    parentBus.emit(SUBAGENT_CHILD_SESSION_CREATED, {
+      sessionId: childSessionId,
+      parentSessionId,
+    });
+    getServingSessionRegistry().markServing(parentSessionId);
+
+    // The parent's answer approves the whole line, so it has to see every
+    // command the child left asking, not only the winner.
+    const firePromise = childPi.fire(
+      "tool_call",
+      {
+        toolName: "bash",
+        toolCallId: "child-chain-bash",
+        input: { command: "ls && rm -rf /tmp/x" },
+      },
+      makeChildCtx(childCwd, childSessionId),
+    );
+
+    const request = await approveForwardedRequest(
+      forwardingDir,
+      parentSessionId,
+    );
+    expect(request.accessIntent?.matchValues).toEqual(["ls"]);
+    expect(request.accessIntent?.askingUnits).toStrictEqual([
+      { command: "ls" },
+      { command: "rm -rf /tmp/x" },
+    ]);
+
+    await firePromise;
+    rmSync(childCwd, { recursive: true, force: true });
+  });
+
   // The #719 failure mode: the child forwards correctly, but nothing drains
   // the parent's inbox. Before the serving registry it waited out the full
   // ten-minute timeout and reported the block as a user denial.

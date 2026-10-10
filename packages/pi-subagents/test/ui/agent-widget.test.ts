@@ -1,3 +1,4 @@
+import type { TuiMode } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentTypeRegistry } from "#src/config/agent-types";
 import type { Subagent } from "#src/lifecycle/subagent";
@@ -21,11 +22,17 @@ function makeAgent(overrides: { id?: string; status?: string; completedAt?: numb
 const alwaysShow = () => true;
 const neverShow = () => false;
 
-/** The slice of the TUI the widget factory callback reads. */
-function stubTui(overrides: { columns?: number; rows?: number } = {}) {
+/**
+ * The slice of the TUI the widget factory callback reads. A plain object, so a
+ * test can reassign `mode` to model Pi switching renderers mid-session.
+ */
+function stubTui(
+	overrides: { columns?: number; rows?: number; mode?: TuiMode; requestRender?: () => void } = {},
+): { terminal: { columns: number; rows: number }; mode: TuiMode; requestRender: () => void } {
 	return {
 		terminal: { columns: overrides.columns ?? 200, rows: overrides.rows ?? 40 },
-		requestRender: () => {},
+		mode: overrides.mode ?? "regular",
+		requestRender: overrides.requestRender ?? (() => {}),
 	};
 }
 
@@ -512,34 +519,105 @@ describe("AgentWidget — animation cadence", () => {
 		vi.useRealTimers();
 	});
 
-	// The widget is the only thing driving Pi's renderer while the parent idles,
-	// and each render walks the whole component tree, so the cadence is a cost
-	// paid per running agent for as long as it runs.
-	it("asks Pi for one render per 80 ms while an agent runs", () => {
+	/**
+	 * One running background agent behind a widget whose factory Pi invokes with
+	 * `tui` — or never invokes, when `tui` is undefined (print/RPC mode).
+	 */
+	function arrangeRunningWidget(tui: ReturnType<typeof stubTui> | undefined) {
 		const record = createTestSubagent({
 			id: "a1",
 			status: "running",
 			completedAt: undefined,
 			isBackground: true,
 		});
-		const manager = { listAgents: () => [record] } as unknown as SubagentManager;
+		const listAgents = vi.fn(() => [record]);
+		const manager = { listAgents } as unknown as SubagentManager;
 		const widget = new AgentWidget(manager, new AgentTypeRegistry(() => new Map()));
-		const requestRender = vi.fn();
 		widget.setUICtx({
 			setStatus: () => {},
 			setWidget: (_key, content) => {
-				content?.({ terminal: { columns: 200, rows: 40 }, requestRender }, stubTheme());
+				if (tui) content?.(tui, stubTheme());
 			},
 		});
+		return { record, widget, listAgents };
+	}
+
+	// The widget is the only thing driving Pi's renderer while the parent idles.
+	// A fullscreen frame diffs only the visible rows, so it ticks at Pi's own
+	// Loader cadence; a regular-mode frame scales with the transcript, so it
+	// ticks slower there.
+	it("asks Pi for a render every 80 ms in fullscreen mode", () => {
+		const requestRender = vi.fn();
+		const { record, widget } = arrangeRunningWidget(stubTui({ mode: "fullscreen", requestRender }));
 
 		widget.onSubagentStarted(record);
-		expect(requestRender).not.toHaveBeenCalled();
-
 		vi.advanceTimersByTime(79);
 		expect(requestRender).not.toHaveBeenCalled();
 
 		vi.advanceTimersByTime(1);
 		expect(requestRender).toHaveBeenCalledTimes(1);
+
+		vi.advanceTimersByTime(80);
+		expect(requestRender).toHaveBeenCalledTimes(2);
+
+		widget.dispose();
+	});
+
+	it("asks Pi for a render every 250 ms in regular mode", () => {
+		const requestRender = vi.fn();
+		const { record, widget } = arrangeRunningWidget(stubTui({ mode: "regular", requestRender }));
+
+		widget.onSubagentStarted(record);
+		vi.advanceTimersByTime(249);
+		expect(requestRender).not.toHaveBeenCalled();
+
+		vi.advanceTimersByTime(1);
+		expect(requestRender).toHaveBeenCalledTimes(1);
+
+		widget.dispose();
+	});
+
+	it("keeps asking for renders while an agent runs", () => {
+		const requestRender = vi.fn();
+		const { record, widget } = arrangeRunningWidget(stubTui({ mode: "regular", requestRender }));
+
+		widget.onSubagentStarted(record);
+		vi.advanceTimersByTime(750);
+
+		expect(requestRender).toHaveBeenCalledTimes(3);
+
+		widget.dispose();
+	});
+
+	it("follows a switch to fullscreen on the next tick", () => {
+		const requestRender = vi.fn();
+		const tui = stubTui({ mode: "regular", requestRender });
+		const { record, widget } = arrangeRunningWidget(tui);
+
+		widget.onSubagentStarted(record);
+		vi.advanceTimersByTime(250);
+		expect(requestRender).toHaveBeenCalledTimes(1);
+
+		tui.mode = "fullscreen";
+		vi.advanceTimersByTime(250);
+		expect(requestRender).toHaveBeenCalledTimes(2);
+
+		vi.advanceTimersByTime(80);
+		expect(requestRender).toHaveBeenCalledTimes(3);
+
+		widget.dispose();
+	});
+
+	it("ticks at the regular cadence before Pi hands the widget a TUI", () => {
+		const { record, widget, listAgents } = arrangeRunningWidget(undefined);
+
+		widget.onSubagentStarted(record);
+		const callsAfterStart = listAgents.mock.calls.length;
+		vi.advanceTimersByTime(80);
+		expect(listAgents.mock.calls.length).toBe(callsAfterStart);
+
+		vi.advanceTimersByTime(170);
+		expect(listAgents.mock.calls.length).toBe(callsAfterStart + 1);
 
 		widget.dispose();
 	});

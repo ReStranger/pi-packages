@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [23.4.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v23.3.0...pi-subagents-v23.4.0) (2026-10-09)
+
+
+### Features
+
+* **pi-subagents:** report on each agent record why a resume would be refused ([b942f96](https://github.com/gotgenes/pi-packages/commit/b942f96309a8c36e25b3abe8258b6c18fbb10e7f)), closes [#912](https://github.com/gotgenes/pi-packages/issues/912)
+
+### Documentation
+
+* **pi-subagents:** admit resumeRefusal to SubagentRecord under decision 0005 ([0b772d8](https://github.com/gotgenes/pi-packages/commit/0b772d8763741d8e6c147c4d9aa7d2b208f2331e)), closes [#912](https://github.com/gotgenes/pi-packages/issues/912)
+
+## [23.3.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v23.2.0...pi-subagents-v23.3.0) (2026-10-09)
+
+
+### Features
+
+* **pi-subagents:** report a running agent's activity, turns, and last progress in get_subagent_result ([a4756fe](https://github.com/gotgenes/pi-packages/commit/a4756fed85c07db81eb91498786308e6e8307478)), closes [#947](https://github.com/gotgenes/pi-packages/issues/947)
+* **pi-subagents:** let get_subagent_result bound its wait with a timeout ([8ba9112](https://github.com/gotgenes/pi-packages/commit/8ba9112f1996b495476c2ae82d24b3a526fd88f1)), closes [#947](https://github.com/gotgenes/pi-packages/issues/947)
+
+### Documentation
+
+* **pi-subagents:** replace upstream README media with a recorded demo ([8e889d0](https://github.com/gotgenes/pi-packages/commit/8e889d0431e569e29b2ae3269fee0e9246e19f46))
+* **pi-subagents:** document get_subagent_result's timeout and progress line ([a640452](https://github.com/gotgenes/pi-packages/commit/a6404525a55254254202264276be565b62caeefe)), closes [#947](https://github.com/gotgenes/pi-packages/issues/947)
+
+## [23.2.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v23.1.1...pi-subagents-v23.2.0) (2026-10-06)
+
+
+### Features
+
+* **pi-subagents:** record each run's transcript path and tool count in its session entry ([f019748](https://github.com/gotgenes/pi-packages/commit/f019748c7378eb289c7472d94224e3de19aa9c1b)), closes [#1034](https://github.com/gotgenes/pi-packages/issues/1034)
+
+### Bug Fixes
+
+* **pi-subagents:** keep earlier subagents in /subagents:sessions after /reload ([77ef88a](https://github.com/gotgenes/pi-packages/commit/77ef88af6424a3dc0006665ad34061dab5074f1b)), closes [#1034](https://github.com/gotgenes/pi-packages/issues/1034)
+
+### Documentation
+
+* **pi-subagents:** document persisted runs in /subagents:sessions ([9900b2c](https://github.com/gotgenes/pi-packages/commit/9900b2ca8dd7a1ab7ba84060c01c45cc9443513a)), closes [#1034](https://github.com/gotgenes/pi-packages/issues/1034)
+
+## [23.1.1](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v23.1.0...pi-subagents-v23.1.1) (2026-10-06)
+
+
+### Performance Improvements
+
+* **pi-subagents:** animate the agents widget at 80 ms in fullscreen mode ([cda4a5c](https://github.com/gotgenes/pi-packages/commit/cda4a5ced6bf3318ebfaeb696451191c0dece817)), closes [#1035](https://github.com/gotgenes/pi-packages/issues/1035)
+
+## [23.1.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v23.0.0...pi-subagents-v23.1.0) (2026-10-06)
+
+
+### Features
+
+* **pi-subagents:** the session viewer's paging keys follow your keybindings ([c83225b](https://github.com/gotgenes/pi-packages/commit/c83225bc226aa2fbcba216a03e82c5de2d31d42b)), closes [#1032](https://github.com/gotgenes/pi-packages/issues/1032)
+* **pi-subagents:** scroll the session viewer with the mouse wheel ([b800890](https://github.com/gotgenes/pi-packages/commit/b80089052e7afb41d2cdfdaacc98abfb09ba15c9)), closes [#1032](https://github.com/gotgenes/pi-packages/issues/1032)
+
+### Bug Fixes
+
+* **pi-subagents:** page the session viewer natively in fullscreen mode ([915bbf2](https://github.com/gotgenes/pi-packages/commit/915bbf23676af80758943336e43c5cc5597b12bd)), closes [#1032](https://github.com/gotgenes/pi-packages/issues/1032)
+
+### Documentation
+
+* **pi-subagents:** record why the fullscreen session viewer is an overlay ([8c688ba](https://github.com/gotgenes/pi-packages/commit/8c688bab100ce1597a5d7178202822c7a29f12de)), closes [#1032](https://github.com/gotgenes/pi-packages/issues/1032)
+
 ## [23.0.0](https://github.com/gotgenes/pi-packages/compare/pi-subagents-v22.0.0...pi-subagents-v23.0.0) (2026-10-03)
 
 

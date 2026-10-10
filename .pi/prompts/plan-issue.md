@@ -288,7 +288,7 @@ git commit -m "docs: plan <short summary> (#$1)"
 Before stopping, persist planning observations for cross-session continuity:
 
 1. Determine the retro file path: same location logic as the plan file (single-package → `packages/<PKG>/docs/retro/NNNN-<slug>.md`; cross-package → `docs/retro/NNNN-<slug>.md`).
-   Use the same slug as the plan file.
+   Use the same slug as the plan file, unless `## Check for prior session context` found an existing retro file for this issue — append to that one.
    Create the directory if needed.
 2. If the retro file does not exist, create it with YAML frontmatter:
 

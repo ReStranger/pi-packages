@@ -473,6 +473,41 @@ Control-flow bodies (`if`/`while`/`for`/`case`) and `{ … }` brace groups are n
 
 A command that starts with `~`, `$HOME`, or `${HOME}` also matches a home-anchored pattern spelled any of those ways, or with the absolute home directory (see [Home Directory Expansion in Patterns](#home-directory-expansion-in-patterns)).
 
+A path argument also matches in its absolute spelling.
+Each command is matched as typed and with every path argument replaced by the absolute path it resolves to, against the working directory a literal `cd` earlier in the chain moved to.
+The last rule matching either text wins, as for any other pattern.
+
+```jsonc
+{
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "rm *": "ask",
+      "rm /tmp/agent-builds/*": "allow"
+    }
+  }
+}
+```
+
+With this policy, `cd /tmp && rm agent-builds/x` runs, because `rm agent-builds/x` is also matched as `rm /tmp/agent-builds/x`.
+An absolute `deny` reaches the relative spelling the same way.
+An absolute `allow` written *before* the broader `ask` still loses to it.
+
+Some arguments get no absolute spelling and are matched as typed only:
+
+- an argument after a `cd` whose target is not literal (`cd "$DIR"`, `cd -`, a bare `cd`), since the directory is not known;
+- an argument holding a glob (`*`, `?`, `[`), quoted or not;
+- an argument a variable or substitution computes (`$DIR/x`, `$(pwd)/x`);
+- a bare name such as `config.json` that names nothing on disk;
+- a POSIX absolute path on Windows (`/tmp/x`), which is kept as typed.
+
+The absolute spelling replaces every path argument of a command at once, and it is separate from the home spelling above.
+A rule naming one argument absolute and another relative, or naming both the expanded home and an absolute argument, matches neither text.
+A quoted argument is spelled without its quotes (`rm "a b/c"` is also matched as `rm /tmp/a b/c`).
+Whether an argument is a path is decided by its shape, so a slash-bearing word that is not one is spelled too: `git push origin feature/x` is also matched as `git push origin <cwd>/feature/x`, which only a rule naming that absolute form would match.
+When the spelling is what a rule matched, the prompt shows it on a `matched as` line beside the rule, and the review log records it as `matchedSpelling`.
+A session approval still records the command as typed, so approving `rm agent-builds/x` does not cover a later `rm /tmp/agent-builds/x`.
+
 A leading environment-variable assignment prefix is stripped before matching, so the rule gates the underlying command rather than the prefix.
 So `AWS_PROFILE=prod aws ec2 …` is matched as `aws ec2 …` — a `aws *` rule applies even though the invocation begins with `AWS_PROFILE=`.
 Prefixes like `PGPASSWORD=` and `KUBECONFIG=` are handled the same way.
@@ -557,6 +592,11 @@ The bash gate fails closed: when in doubt it blocks or prompts, never silently a
 Every synthetic `ask` above — the two parse sentinels and both wrapper floors — is auto-approved under `yoloMode: true`, which is an explicit full-permissive opt-in rather than a rule that could ride through.
 An explicit `deny` still denies under yolo, and with yolo off the floors are unaffected.
 Approving one for the session works normally: the floors clamp the decision and leave the grant's provenance intact, so a command you have already approved does not prompt again.
+
+A subagent's floored ask keeps its floor when it is forwarded to the parent session.
+The parent's `allow` rule does not answer it, so `sudo rm x` from a subagent prompts in the parent even under a parent `bash: *` allow.
+The parent's `deny` still denies, and a grant for the whole parent session or the parent's `yoloMode` still approves.
+A subagent's chained command (`ls && rm -rf /tmp/x`) is judged by the parent command by command: every command the subagent's own policy left asking is forwarded with its floor, and the parent's `deny` or `ask` on any one of them decides, not only on the first.
 
 Because of this, set an explicit `bash` policy rather than relying on a permissive top-level `*`.
 A config whose top-level `*` is `"allow"` with no `bash` `*` policy lets every bash command silently inherit `allow`; the extension emits a startup warning in that case.
@@ -989,7 +1029,7 @@ A path token owned by one of them consults the `_read` surface alone:
 
 <!-- BEGIN PURE_READER_CORE -->
 
-`awk`, `basename`, `cat`, `cd`, `diff`, `dirname`, `echo`, `egrep`, `fd`, `fgrep`, `find`, `grep`, `head`, `ls`, `pwd`, `realpath`, `rg`, `sed`, `sort`, `stat`, `tail`, `wc`, `which`
+`:`, `awk`, `basename`, `cat`, `cd`, `diff`, `dirname`, `echo`, `egrep`, `false`, `fd`, `fgrep`, `find`, `grep`, `head`, `ls`, `pwd`, `realpath`, `rg`, `sed`, `sort`, `stat`, `tail`, `true`, `wc`, `which`
 
 <!-- END PURE_READER_CORE -->
 
@@ -1054,12 +1094,13 @@ All four of these must hold, and each is a way the floor's reason could still ap
 1. The unit is an indirection wrapper.
    An `sh -c`/`eval` payload is not one — see below.
 2. The command it runs can be established without passing through an inline shell.
+   `watch` and `parallel` hand their whole command line to a shell, and `rush` and `rust-parallel` build theirs from a template, so a unit with any of the four as a layer never qualifies: `watch cat x \; rm y` runs `rm`.
 3. That command **proves** a read: a bare-basename core word with no option that withdraws the claim.
    So `xargs sort -o /tmp/x` and `xargs find . -delete` stay floored, and so does `xargs ./grep foo`.
 4. The enclosing statement provably writes no file through a redirect.
    A destination the parse cannot resolve — `> $OUT`, `> $(mktemp)` — counts against the exemption rather than for it.
 
-So `xargs grep -l foo`, `xargs wc -l`, `xargs sed -n 1p`, and `find . -name '*.ts' -exec cat {} +` stop prompting under a matching `bash` allow, while `xargs rm`, `xargs sed -i`, and `find . -exec sh -c '…' \;` still prompt.
+So `xargs grep -l foo`, `xargs wc -l`, `xargs sed -n 1p`, `find . -name '*.ts' -exec cat {} +`, and the no-op probe `sudo -n true` stop prompting under a matching `bash` allow, while `xargs rm`, `xargs sed -i`, and `find . -exec sh -c '…' \;` still prompt.
 
 Three things this does **not** change:
 
@@ -1087,7 +1128,8 @@ All four of these must hold, and each keeps the decision about the command that 
    The admitted options are `time -p`/`-l`/`-h`/`-f`; `timeout -s`/`-k`/`-f`/`-p`/`-v` and their long forms; `nice -n`/`--adjustment`; and `stdbuf -i`/`-o`/`-e` and their long forms.
 3. The command it runs is not itself a wrapper or an inline shell, so `timeout 5 bash -c '…'` stays floored.
 4. The command it runs is named literally.
-   `time ( … )` and `time { …; }` stay floored: the parser reads the group as `time`'s arguments, so the commands inside are not yet gated on their own rules.
+   `time ( … )` is decided by the commands inside it, each on its own rule, so `time (rm -rf /tmp/x)` reaches an `rm *` deny.
+   `time { …; }` stays floored: the parser reads the group as `time`'s arguments, so the commands inside are not yet gated on their own rules.
 
 So under `bash: {"*": "allow", "git push *": "deny"}`, `time pnpm run lint >/tmp/lint.txt 2>&1` is allowed and `timeout 60 git push --force` is denied, exactly as without the wrapper.
 No redirect refusal applies here: the redirect destination goes through `path` and `external_directory` as it does for the bare command, and a destination the parse cannot resolve (`> $OUT`) is unprojected for both forms alike.
@@ -1116,6 +1158,21 @@ If you run a permissive `bash` policy and want privilege elevation to prompt reg
 ```
 
 That rule matches the wrapper's own text, so it is decided before the exemption is ever consulted.
+
+`sudo`'s own options are read the way `sudo` reads them, so `sudo -nu cat rm x` runs `rm x`, not a pure reader named `cat`.
+A `sudo` mode in which the command it names is not what runs as named keeps the floor whatever that command is: `-e`/`--edit` (sudoedit edits its operands as files, as root), `-s`/`--shell` and `-i`/`--login` (a shell runs the operand), and `-D`/`--chdir` and `-R`/`--chroot` (relative operands resolve somewhere the path surfaces do not look).
+So does `-h`, whose meaning depends on what follows it, and any option `sudo`'s manual does not list; a mode that keeps the floor is approved at the prompt or under `yoloMode`.
+
+`env`, `xargs`, and `doas` are read the same way, from the BSD and GNU manuals for the first two and `opendoas` for the third, and any option those do not list keeps the floor too.
+So `xargs -n 1 cat` and `env -u FOO cat x` still resolve by `cat`'s rule, while these keep the floor whatever command they name:
+
+- `env -C`/`--chdir`, because relative operands resolve somewhere the path surfaces do not look (`env -C /etc cat shadow` reads `/etc/shadow`).
+- `env -S`/`--split-string`, because the command is split out of one word at run time (`env -Srm cat` runs `rm cat`).
+- `env -P`, `-a`/`--argv0`, and `--env0-from`, because each chooses which binary the named command is: a search path, the argv0 a multi-call binary dispatches on, or an environment that may set `PATH`.
+- `xargs -J`, because it puts input in the command's place when the command equals its replacement string.
+- `doas -C` (it checks a config and runs nothing), `doas -s` (it runs a shell), and OpenBSD's `doas -a`, which `opendoas` does not list.
+
+GNU `xargs -i`, `-l`, `-e`, and `--max-lines` take a value only when it is attached (`-i{}`, `--max-lines=2`), so `xargs -i rm cat x` runs `rm`, and `xargs` and `doas` run a `NAME=value` word as the command rather than an assignment.
 
 #### Which key to actually write
 

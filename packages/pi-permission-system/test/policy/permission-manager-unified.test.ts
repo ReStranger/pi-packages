@@ -4123,4 +4123,52 @@ describe("check — a bash command evaluated with its spellings", () => {
     expect(result.state).toBe("allow");
     expect(result.source).toBe("session");
   });
+
+  describe("the spelling the winning rule matched", () => {
+    it("is reported when the rule matched only a spelling", () => {
+      const result = checkCommand(
+        { "*": "ask", "rm /tmp/a/*": "allow" },
+        "rm a/x",
+        ["rm /tmp/a/x"],
+      );
+      expect(result.state).toBe("allow");
+      expect(result.matchedSpelling).toBe("rm /tmp/a/x");
+    });
+
+    it("is not reported when the rule also matched the command as typed", () => {
+      const result = checkCommand({ "*": "ask", "rm *": "allow" }, "rm a/x", [
+        "rm /tmp/a/x",
+      ]);
+      expect(result.state).toBe("allow");
+      expect("matchedSpelling" in result).toBe(false);
+    });
+
+    it("is not reported when no rule matched", () => {
+      const result = checkCommand({}, "rm a/x", ["rm /tmp/a/x"]);
+      expect("matchedSpelling" in result).toBe(false);
+    });
+
+    it("is never reported for an MCP target matched under a later candidate", () => {
+      const manager = createInMemoryManager(
+        { global: { permission: { mcp: { "*": "ask", github: "deny" } } } },
+        ["github"],
+      );
+      const result = manager.check({
+        kind: "tool",
+        surface: "mcp",
+        input: { tool: "github_search" },
+      });
+      expect(result.state).toBe("deny");
+      expect("matchedSpelling" in result).toBe(false);
+    });
+
+    it("is never reported for a path matched under a later alias", () => {
+      const manager = createInMemoryManager({
+        global: { permission: { path: { "*": "ask", "src/*": "deny" } } },
+      });
+      const result = checkPathValues(manager, ["/repo/src/x", "src/x"]);
+      expect(result.state).toBe("deny");
+      expect("matchedSpelling" in result).toBe(false);
+    });
+  });
 });

@@ -10,6 +10,10 @@
       "git commit*-F": {
         "action": "deny",
         "reason": "This is `git commit -F -` with a heredoc body, which trips an approval prompt the operator must clear by hand. Write the message to a file with the `Write` tool, then `git commit -F <file>` — this rule does not match that spelling"
+      },
+      "git commit*-F-": {
+        "action": "deny",
+        "reason": "This is `git commit -F-` with a heredoc body, which trips an approval prompt the operator must clear by hand. Write the message to a file with the `Write` tool, then `git commit -F <file>` — this rule does not match that spelling"
       }
     }
   }

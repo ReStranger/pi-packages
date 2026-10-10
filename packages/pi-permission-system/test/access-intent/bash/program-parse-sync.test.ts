@@ -4,9 +4,21 @@ import {
   resetWarmBashParser,
   warmBashParser,
 } from "#src/access-intent/bash/parser";
-import { parseBashCommandsSync } from "#src/access-intent/bash/sync-commands";
+import { type BashCommand, BashProgram } from "#src/access-intent/bash/program";
+import { pathFlavorForPlatform } from "#src/path/path-flavor";
+import { PathNormalizer } from "#src/path/path-normalizer";
 
-describe("parseBashCommandsSync", () => {
+const normalizer = new PathNormalizer(
+  pathFlavorForPlatform(process.platform),
+  "/test/cwd",
+);
+
+/** The units the synchronous parse enumerates, or `null` while cold. */
+function commandsOf(command: string): BashCommand[] | null {
+  return BashProgram.parseSync(command, normalizer)?.commands() ?? null;
+}
+
+describe("BashProgram.parseSync commands", () => {
   beforeEach(() => {
     resetWarmBashParser();
   });
@@ -15,7 +27,7 @@ describe("parseBashCommandsSync", () => {
   });
 
   it("returns null when the parser is not warm", () => {
-    expect(parseBashCommandsSync("echo hi")).toBeNull();
+    expect(commandsOf("echo hi")).toBeNull();
   });
 
   describe("once warm", () => {
@@ -24,7 +36,7 @@ describe("parseBashCommandsSync", () => {
     });
 
     it("withholds a wrapped reader's exemption once its argument's HOME is reassigned", () => {
-      expect(parseBashCommandsSync('xargs find "$HOME"')).toEqual([
+      expect(commandsOf('xargs find "$HOME"')).toEqual([
         {
           text: 'xargs find "$HOME"',
           wrapperKind: "indirection",
@@ -32,63 +44,68 @@ describe("parseBashCommandsSync", () => {
           floorExemption: "core-reader",
         },
       ]);
-      expect(parseBashCommandsSync('HOME=-delete; xargs find "$HOME"')).toEqual(
-        [
-          { text: "HOME=-delete" },
-          {
-            text: 'xargs find "$HOME"',
-            wrapperKind: "indirection",
-            executedUnit: 'find "$HOME"',
-          },
-        ],
-      );
+      expect(commandsOf('HOME=-delete; xargs find "$HOME"')).toEqual([
+        { text: "HOME=-delete" },
+        {
+          text: 'xargs find "$HOME"',
+          wrapperKind: "indirection",
+          executedUnit: 'find "$HOME"',
+        },
+      ]);
     });
 
     it("returns a single unit for a lone command", () => {
-      expect(parseBashCommandsSync("echo hi")).toEqual([{ text: "echo hi" }]);
+      expect(commandsOf("echo hi")).toEqual([{ text: "echo hi" }]);
     });
 
     it("decomposes a chained command into its units", () => {
-      expect(parseBashCommandsSync("cd /repo && npm install x")).toEqual([
+      expect(commandsOf("cd /repo && npm install x")).toEqual([
         { text: "cd /repo" },
         { text: "npm install x" },
       ]);
     });
 
     it("descends into a command substitution, tagging its context", () => {
-      expect(parseBashCommandsSync("echo $(rm -rf /)")).toEqual([
+      expect(commandsOf("echo $(rm -rf /)")).toEqual([
         { text: "echo $(rm -rf /)" },
         { text: "rm -rf /", context: "command_substitution" },
       ]);
     });
 
     it("flags an opaque wrapper", () => {
-      expect(parseBashCommandsSync('bash -c "rm -rf /"')).toEqual([
+      expect(commandsOf('bash -c "rm -rf /"')).toEqual([
         {
           text: 'bash -c "rm -rf /"',
           wrapperKind: "opaque-payload",
           executedUnit: "rm -rf /",
+          // The path projection reads the payload as a relative path, so its
+          // absolute spelling is spelled; the wrapper floor holds either way.
+          spellings: ["bash -c /test/cwd/rm -rf "],
         },
       ]);
     });
 
     it("returns an empty array for a comment-only command", () => {
-      expect(parseBashCommandsSync("# just a comment")).toEqual([]);
+      expect(commandsOf("# just a comment")).toEqual([]);
     });
 
     it("returns an empty array for an empty command", () => {
-      expect(parseBashCommandsSync("")).toEqual([]);
+      expect(commandsOf("")).toEqual([]);
     });
 
     it("enumerates a command a partial parse dropped (#875)", () => {
       // Gate parity (#309): the advisory answer must not be weaker than the
       // gate's, and the gate salvages this command through `BashProgram`.
       expect(
-        parseBashCommandsSync(
+        commandsOf(
           "git add -A . && git commit -F - <<'MSG' 2>&1 | rm -rf /tmp/x\nmsg\nMSG",
         ),
       ).toEqual([
-        { text: "git add -A .", parseUnresolved: true },
+        {
+          text: "git add -A .",
+          parseUnresolved: true,
+          spellings: ["git add -A /test/cwd"],
+        },
         { text: "git commit -F", parseUnresolved: true },
         { text: "rm -rf /tmp/x", parseUnresolved: true, salvaged: true },
         { text: "git add -A .", parseUnresolved: true, salvaged: true },
@@ -98,9 +115,7 @@ describe("parseBashCommandsSync", () => {
     });
 
     it("enumerates a command after a heredoc the grammar cannot parse", () => {
-      expect(
-        parseBashCommandsSync("cat <<EOF ; rm -rf /tmp/x\nb\nEOF"),
-      ).toEqual([
+      expect(commandsOf("cat <<EOF ; rm -rf /tmp/x\nb\nEOF")).toEqual([
         { text: "cat", parseUnresolved: true },
         { text: "cat", parseUnresolved: true, salvaged: true },
         { text: "rm -rf /tmp/x", parseUnresolved: true, salvaged: true },
@@ -109,44 +124,49 @@ describe("parseBashCommandsSync", () => {
 
     describe("a unit opening with a home prefix carries its home spelling", () => {
       it("spells a command named through ~", () => {
-        expect(parseBashCommandsSync("~/bin/x --y")).toEqual([
+        expect(commandsOf("~/bin/x --y")).toEqual([
           { text: "~/bin/x --y", spellings: [`${homedir()}/bin/x --y`] },
         ]);
       });
 
       it("spells a command named through $HOME", () => {
-        expect(parseBashCommandsSync("$HOME/bin/x")).toEqual([
+        expect(commandsOf("$HOME/bin/x")).toEqual([
           { text: "$HOME/bin/x", spellings: [`${homedir()}/bin/x`] },
         ]);
       });
 
       it("withholds the spelling once the program rebinds HOME", () => {
-        expect(parseBashCommandsSync("HOME=/tmp/evil; ~/bin/x")).toEqual([
+        expect(commandsOf("HOME=/tmp/evil; ~/bin/x")).toEqual([
           { text: "HOME=/tmp/evil" },
           { text: "~/bin/x" },
         ]);
       });
 
       it("withholds the spelling under a prefix assignment of HOME", () => {
-        expect(parseBashCommandsSync("HOME=/tmp/evil ~/bin/x")).toEqual([
+        expect(commandsOf("HOME=/tmp/evil ~/bin/x")).toEqual([
           { text: "~/bin/x" },
         ]);
       });
 
-      it.each(["echo ~/x", '"~/bin/x"'])(
-        "does not spell a unit whose text does not open with the prefix: %s",
-        (command) => {
-          expect(parseBashCommandsSync(command)).toEqual([{ text: command }]);
-        },
-      );
+      it("does not spell a quoted command name", () => {
+        expect(commandsOf('"~/bin/x"')).toEqual([{ text: '"~/bin/x"' }]);
+      });
 
-      it("does not spell a wrapper whose wrapped command opens with the prefix", () => {
-        const units = parseBashCommandsSync("sudo ~/bin/x");
-        expect(units?.map((unit) => unit.spellings)).toEqual([undefined]);
+      it("spells a home-prefixed argument as an argument, not as the unit's head", () => {
+        expect(commandsOf("echo ~/x")).toEqual([
+          { text: "echo ~/x", spellings: [`echo ${homedir()}/x`] },
+        ]);
+      });
+
+      it("spells a wrapper's home-prefixed argument as an argument", () => {
+        const units = commandsOf("sudo ~/bin/x");
+        expect(units?.map((unit) => unit.spellings)).toEqual([
+          [`sudo ${homedir()}/bin/x`],
+        ]);
       });
 
       it("spells a nested command on its own, not its enclosing one", () => {
-        expect(parseBashCommandsSync("echo $(~/bin/x)")).toEqual([
+        expect(commandsOf("echo $(~/bin/x)")).toEqual([
           { text: "echo $(~/bin/x)" },
           {
             text: "~/bin/x",

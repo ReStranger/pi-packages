@@ -376,7 +376,7 @@ export class PermissionManager implements ScopedPermissionManager {
         intent.command,
         intent.spellings,
       );
-      return buildCheckResult(
+      const { result, matchedValue } = evaluateCheck(
         surface,
         values,
         resultExtras,
@@ -385,6 +385,12 @@ export class PermissionManager implements ScopedPermissionManager {
         fullRules,
         this.flavor,
       );
+      // `values[0]` is the unit as typed, and the evaluator reports the first
+      // value the winning rule matches, so any other value is a spelling the
+      // typed text did not match.
+      return matchedValue === values[0]
+        ? result
+        : { ...result, matchedSpelling: matchedValue };
     }
 
     // kind === "tool"
@@ -423,6 +429,30 @@ function buildCheckResult(
   fullRules: Ruleset,
   flavor: PathFlavor,
 ): PermissionCheckResult {
+  return evaluateCheck(
+    surface,
+    values,
+    resultExtras,
+    normalizedToolName,
+    toolName,
+    fullRules,
+    flavor,
+  ).result;
+}
+
+/**
+ * {@link buildCheckResult}, plus the candidate value the decision was reported
+ * under — for a caller that knows what that value means on its own surface.
+ */
+function evaluateCheck(
+  surface: string,
+  values: string[],
+  resultExtras: Record<string, unknown>,
+  normalizedToolName: string,
+  toolName: string,
+  fullRules: Ruleset,
+  flavor: PathFlavor,
+): { result: PermissionCheckResult; matchedValue: string } {
   const { rule, value } = evaluateAnyValue(surface, values, fullRules, flavor);
 
   // For MCP, replace the normalizer's fallback target with the actual
@@ -433,16 +463,19 @@ function buildCheckResult(
       : resultExtras;
 
   return {
-    toolName,
-    state: rule.action,
-    reason: rule.reason,
-    matchedPattern:
-      rule.layer === "config" || rule.layer === "session"
-        ? rule.pattern
-        : undefined,
-    source: deriveSource(rule, normalizedToolName),
-    origin: rule.origin,
-    ...extras,
+    result: {
+      toolName,
+      state: rule.action,
+      reason: rule.reason,
+      matchedPattern:
+        rule.layer === "config" || rule.layer === "session"
+          ? rule.pattern
+          : undefined,
+      source: deriveSource(rule, normalizedToolName),
+      origin: rule.origin,
+      ...extras,
+    },
+    matchedValue: value,
   };
 }
 

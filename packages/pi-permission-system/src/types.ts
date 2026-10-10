@@ -84,11 +84,41 @@ export interface PermissionCheckResult {
    */
   executedUnit?: string;
   /**
+   * The spelling of the bash unit the winning rule matched, when the rule did
+   * not also match the unit as typed — the absolute spelling of a relative
+   * path argument, say (#910). Display-only: absent whenever the typed text
+   * decided, and dropped by a floor that replaces {@link matchedPattern}.
+   */
+  matchedSpelling?: string;
+  /**
    * Set when the winning bash unit is a wrapper the floor no longer covers,
    * naming why (#803, #963). Recorded in the review log so an allow the floor would
    * once have prompted for is auditable to the reason that let it through.
    */
   floorExemption?: FloorExemption;
+  /**
+   * The synthetic pattern of a floor that raised this ask on the bash chain —
+   * on the deciding unit, or on another asking unit of the same command. Only
+   * the child's parse knows it, so a forwarded ask carries it for the serving
+   * node to clamp its own `allow` with.
+   */
+  floor?: string;
+  /**
+   * Every unit of the bash chain that resolved to `ask` and was not
+   * session-granted, in chain order, each with its own floor. Set only on an
+   * asking chain winner: the serving node of a forwarded ask judges each one,
+   * since the winner alone would approve commands it never saw.
+   */
+  askingUnits?: readonly AskingBashUnit[];
+}
+
+/**
+ * One unit of a bash chain the gate left asking, as the serving node of a
+ * forwarded ask needs it: the unit as typed, and the floor that raised it.
+ */
+export interface AskingBashUnit {
+  command: string;
+  floor?: string;
 }
 
 export function isPermissionState(value: unknown): value is PermissionState {

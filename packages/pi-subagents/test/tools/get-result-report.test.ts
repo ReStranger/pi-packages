@@ -238,6 +238,65 @@ describe("formatAgentReport", () => {
 		expect(text).not.toContain("Full transcript available at:");
 	});
 
+	describe("a running agent's progress", () => {
+		const running = { status: "running" as const, result: undefined, duration: "80.0s (running)" };
+
+		it("names the activity, turns used, and time since the last progress before the description", () => {
+			const text = formatAgentReport(
+				makeReport({
+					...running,
+					progress: { activity: "running command\u2026", turns: 7, sinceLastProgress: "72.0s" },
+				}),
+			);
+			expect(text).toBe(
+				"Agent: agent-1\n" +
+					"Type: General | Status: running | Tool uses: 3 | Duration: 80.0s (running)\n" +
+					"Progress: running command\u2026 | Turns: 7 | Last progress: 72.0s ago\n" +
+					"Description: Investigate the bug\n\n" +
+					"Agent is still running. Use wait: true or check back later.",
+			);
+		});
+
+		it("omits the turns before the run reports a budget", () => {
+			const text = formatAgentReport(
+				makeReport({
+					...running,
+					progress: { activity: "thinking\u2026", turns: undefined, sinceLastProgress: "3.0s" },
+				}),
+			);
+			expect(text).toContain("\nProgress: thinking\u2026 | Last progress: 3.0s ago\n");
+		});
+
+		it("adds no progress line when the report carries none", () => {
+			const text = formatAgentReport(makeReport(running));
+			expect(text).not.toContain("Progress:");
+		});
+	});
+
+	describe("a wait that ended at its bound", () => {
+		it("says the agent was not stopped and what to do instead of waiting again, before the transcript pointer", () => {
+			const text = formatAgentReport(
+				makeReport({
+					status: "running",
+					result: undefined,
+					duration: "130.0s (running)",
+					waitExpiredAfter: 120,
+					transcriptPath: "/tasks/agent.jsonl",
+				}),
+			);
+			expect(text).toBe(
+				"Agent: agent-1\n" +
+					"Type: General | Status: running | Tool uses: 3 | Duration: 130.0s (running)\n" +
+					"Description: Investigate the bug\n\n" +
+					"Agent is still running. Use wait: true or check back later.\n\n" +
+					"This wait ended after its 120s timeout. The agent was not stopped and is still running.\n" +
+					"If its progress has not changed since your last check, waiting again will not unstick it: " +
+					"read its transcript, steer it with steer_subagent, or tell the user it appears stuck.\n\n" +
+					"Full transcript available at: /tasks/agent.jsonl",
+			);
+		});
+	});
+
 	describe("an agent resumed while the call waited", () => {
 		it("closes the outcome by saying the agent is running again, before the transcript pointer", () => {
 			const text = formatAgentReport(

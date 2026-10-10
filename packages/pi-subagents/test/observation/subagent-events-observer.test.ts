@@ -89,7 +89,7 @@ describe("SubagentEventsObserver", () => {
 			expect(emit).toHaveBeenCalledWith("subagents:failed", expect.anything());
 		});
 
-		it("calls appendEntry with subagents:record and the eight persisted fields", () => {
+		it("calls appendEntry with subagents:record and the persisted fields", () => {
 			const { observer, appendEntry } = makeObserver();
 			const record = createTestSubagent({
 				id: "agent-2",
@@ -113,6 +113,8 @@ describe("SubagentEventsObserver", () => {
 				error: undefined,
 				startedAt: 1000,
 				completedAt: 2000,
+				outputFile: undefined,
+				toolUses: 3,
 			});
 		});
 
@@ -181,7 +183,7 @@ describe("SubagentEventsObserver", () => {
 			expect(emit).toHaveBeenCalledExactlyOnceWith("subagents:resumed", buildEventData(record));
 		});
 
-		it("appends subagents:record with the eight persisted fields", () => {
+		it("appends subagents:record with the persisted fields", () => {
 			const { observer, appendEntry } = makeObserver();
 			const record = createTestSubagent({
 				id: "agent-5",
@@ -205,6 +207,8 @@ describe("SubagentEventsObserver", () => {
 				error: undefined,
 				startedAt: 3000,
 				completedAt: 4000,
+				outputFile: undefined,
+				toolUses: 3,
 			});
 		});
 
