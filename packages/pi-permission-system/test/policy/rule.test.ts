@@ -7,6 +7,7 @@ import {
   evaluateMostRestrictive,
   floorAllowsToAsk,
   isSurfaceFullyDenied,
+  rewriteAsksToDeny,
   rewriteAsksToYolo,
 } from "#src/policy/rule";
 
@@ -814,6 +815,75 @@ describe("floorAllowsToAsk", () => {
   test("'fail-closed' is a valid RuleOrigin", () => {
     const origin: RuleOrigin = "fail-closed";
     expect(origin).toBe("fail-closed");
+  });
+});
+
+describe("rewriteAsksToDeny", () => {
+  const overlayAskBash: Rule = {
+    surface: "bash",
+    pattern: "*",
+    action: "ask",
+    origin: "global",
+  };
+  const overlayAllowRead: Rule = {
+    surface: "read",
+    pattern: "*",
+    action: "allow",
+    origin: "agent",
+    layer: "config",
+  };
+  const overlayDenyBash: Rule = {
+    surface: "bash",
+    pattern: "rm *",
+    action: "deny",
+    origin: "project",
+    reason: "No rm",
+  };
+
+  test("rewrites an ask rule to deny tagged origin 'deny' with reason", () => {
+    const result = rewriteAsksToDeny([overlayAskBash]);
+    expect(result).toEqual([
+      {
+        surface: "bash",
+        pattern: "*",
+        action: "deny",
+        origin: "deny",
+        reason: "Denied by deny mode",
+      },
+    ]);
+  });
+
+  test("preserves surface, pattern, and layer while rewriting ask", () => {
+    const askWithLayer: Rule = { ...overlayAskBash, layer: "config" };
+    const [rewritten] = rewriteAsksToDeny([askWithLayer]);
+    expect(rewritten.surface).toBe("bash");
+    expect(rewritten.pattern).toBe("*");
+    expect(rewritten.layer).toBe("config");
+    expect(rewritten.action).toBe("deny");
+    expect(rewritten.origin).toBe("deny");
+    expect(rewritten.reason).toBe("Denied by deny mode");
+  });
+
+  test("passes an allow rule through untouched", () => {
+    const result = rewriteAsksToDeny([overlayAllowRead]);
+    expect(result).toEqual([overlayAllowRead]);
+  });
+
+  test("passes an explicit deny rule through untouched with its reason", () => {
+    const result = rewriteAsksToDeny([overlayDenyBash]);
+    expect(result).toEqual([overlayDenyBash]);
+  });
+
+  test("does not mutate the input ruleset", () => {
+    const ruleset: Ruleset = [overlayAskBash];
+    rewriteAsksToDeny(ruleset);
+    expect(ruleset[0]?.action).toBe("ask");
+    expect(ruleset[0]?.origin).toBe("global");
+  });
+
+  test("'deny' is a valid RuleOrigin", () => {
+    const origin: RuleOrigin = "deny";
+    expect(origin).toBe("deny");
   });
 });
 

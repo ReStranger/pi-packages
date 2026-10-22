@@ -18,6 +18,18 @@ export type {
 };
 
 /**
+ * Active permission mode for a session node.
+ * - `"normal"`: Standard rule evaluation; asks prompt the user.
+ * - `"yolo"`: Auto-approves all asks; explicit denies remain blocked.
+ * - `"deny"`: Auto-denies all asks without prompting; explicit allows remain allowed.
+ */
+export type PermissionMode = "normal" | "yolo" | "deny";
+
+export function isPermissionMode(value: unknown): value is PermissionMode {
+  return value === "normal" || value === "yolo" || value === "deny";
+}
+
+/**
  * Per-scope permission config shape after loading and validation.
  * Holds only the flat permission map — all policy is expressed there.
  */

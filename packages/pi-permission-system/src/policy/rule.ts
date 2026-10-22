@@ -24,7 +24,8 @@ export type RuleOrigin =
   | "baseline"
   | "session"
   | "yolo"
-  | "fail-closed";
+  | "fail-closed"
+  | "deny";
 
 /** A single permission rule — the atomic unit of policy. */
 export interface Rule {
@@ -63,6 +64,31 @@ export type Ruleset = Rule[];
 export function rewriteAsksToYolo(rules: Ruleset): Ruleset {
   return rules.map((rule) =>
     rule.action === "ask" ? { ...rule, action: "allow", origin: "yolo" } : rule,
+  );
+}
+
+/**
+ * Rewrite every `ask` rule to `deny`, tagged `origin: "deny"`.
+ *
+ * The composition-stage expression of deny mode: when enabled, an `ask` becomes
+ * a standing `deny` rather than prompting the user. `allow` and existing `deny`
+ * rules pass through untouched, so deny mode suppresses prompts but preserves
+ * explicit allows.
+ *
+ * Pure and non-mutating — `surface`, `pattern`, and `layer` are preserved so
+ * downstream `matchedPattern` / source derivation is unaffected; only `action`,
+ * `origin`, and `reason` change.
+ */
+export function rewriteAsksToDeny(rules: Ruleset): Ruleset {
+  return rules.map((rule) =>
+    rule.action === "ask"
+      ? {
+          ...rule,
+          action: "deny",
+          origin: "deny",
+          reason: "Denied by deny mode",
+        }
+      : rule,
   );
 }
 

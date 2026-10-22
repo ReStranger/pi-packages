@@ -121,7 +121,8 @@ type RuleOrigin =
   | "baseline"
   | "session"
   | "yolo"
-  | "fail-closed";
+  | "fail-closed"
+  | "deny";
 
 interface Rule {
   /** The permission surface: "bash", "edit", "mcp", "skill", "external_directory", "path", etc. */
