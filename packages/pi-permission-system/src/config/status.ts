@@ -2,6 +2,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import type { PermissionMode } from "#src/types";
 
 import {
   EXTENSION_ID,
@@ -11,6 +12,7 @@ import {
 
 export const PERMISSION_SYSTEM_STATUS_KEY = EXTENSION_ID;
 export const PERMISSION_SYSTEM_YOLO_STATUS_VALUE = "yolo";
+export const PERMISSION_SYSTEM_DENY_STATUS_VALUE = "deny";
 
 type PermissionStatusContext =
   | Pick<ExtensionContext, "hasUI" | "ui">
@@ -18,18 +20,21 @@ type PermissionStatusContext =
 
 export function getPermissionSystemStatus(
   config: PermissionSystemExtensionConfig,
+  sessionMode?: PermissionMode,
 ): string | undefined {
-  return isYoloModeEnabled(config)
-    ? PERMISSION_SYSTEM_YOLO_STATUS_VALUE
-    : undefined;
+  const mode = sessionMode ?? (isYoloModeEnabled(config) ? "yolo" : "normal");
+  if (mode === "yolo") return PERMISSION_SYSTEM_YOLO_STATUS_VALUE;
+  if (mode === "deny") return PERMISSION_SYSTEM_DENY_STATUS_VALUE;
+  return undefined;
 }
 
 export function syncPermissionSystemStatus(
   ctx: PermissionStatusContext,
   config: PermissionSystemExtensionConfig,
+  sessionMode?: PermissionMode,
 ): void {
   ctx.ui.setStatus(
     PERMISSION_SYSTEM_STATUS_KEY,
-    getPermissionSystemStatus(config),
+    getPermissionSystemStatus(config, sessionMode),
   );
 }

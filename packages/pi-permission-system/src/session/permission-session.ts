@@ -4,7 +4,10 @@ import type { ForwardingController } from "#src/authority/forwarding-manager";
 import type { DeclaredCommandEffects } from "#src/config/command-effects-config";
 import type { ShellToolsConfig } from "#src/config/config-schema";
 import type { SessionConfigStore } from "#src/config/config-store";
-import type { PermissionSystemExtensionConfig } from "#src/config/extension-config";
+import {
+  isYoloModeEnabled,
+  type PermissionSystemExtensionConfig,
+} from "#src/config/extension-config";
 import type { ExtensionPaths } from "#src/config/extension-paths";
 import { syncPermissionSystemStatus } from "#src/config/status";
 import type { SkillPromptEntry } from "#src/exposure/skill-prompt-sanitizer";
@@ -22,6 +25,7 @@ import {
   resolveToolPreviewLimits,
   type ToolPreviewFormatterOptions,
 } from "#src/tool-input/tool-preview-formatter";
+import type { PermissionMode } from "#src/types";
 import {
   getActiveAgentName,
   getActiveAgentNameFromSystemPrompt,
@@ -47,6 +51,7 @@ export class PermissionSession implements ToolCallGateInputs {
   private skillEntries: SkillPromptEntry[] = [];
   private knownAgentName: string | null = null;
   private pathNormalizer: PathNormalizer;
+  private sessionModeOverride?: PermissionMode;
   private readonly toolSurfaceBaseline = new ToolSurfaceBaseline();
 
   constructor(
@@ -204,6 +209,22 @@ export class PermissionSession implements ToolCallGateInputs {
 
   // ── Config ─────────────────────────────────────────────────────────────
 
+  /** Current session permission mode (dynamic override if set, else config-derived). */
+  getSessionMode(): PermissionMode {
+    return (
+      this.sessionModeOverride ??
+      (isYoloModeEnabled(this.config) ? "yolo" : "normal")
+    );
+  }
+
+  /** Set session-scoped permission mode override and update status bar. */
+  setSessionMode(mode: PermissionMode): void {
+    this.sessionModeOverride = mode;
+    if (this.context?.hasUI) {
+      syncPermissionSystemStatus(this.context, this.config, mode);
+    }
+  }
+
   /**
    * Reload merged config from disk, then bring the status bar in step with it.
    *
@@ -222,7 +243,11 @@ export class PermissionSession implements ToolCallGateInputs {
   ): void {
     this.configStore.refresh(ctx?.cwd, projectTrusted);
     if (ctx?.hasUI) {
-      syncPermissionSystemStatus(ctx, this.configStore.current());
+      syncPermissionSystemStatus(
+        ctx,
+        this.configStore.current(),
+        this.getSessionMode(),
+      );
     }
   }
 
