@@ -328,6 +328,56 @@ describe("GateRunner — descriptor path", () => {
     expect(deps.escalate).toHaveBeenCalledTimes(1);
   });
 
+  it("blocks an ask in deny mode without prompting", async () => {
+    const { runner, deps } = makeGateRunner({
+      mode: "deny",
+      resolveResult: makeCheckResult({ state: "ask", matchedPattern: "*" }),
+    });
+
+    const result = await runner.run(makeDescriptor(), null);
+
+    expect(result).toMatchObject({ action: "block" });
+    expect(deps.escalate).not.toHaveBeenCalled();
+    expect(deps.reporter.writeReviewLog).toHaveBeenCalledWith(
+      "permission_request.blocked",
+      expect.objectContaining({ resolution: "policy_denied" }),
+    );
+  });
+
+  it("clamps a synthetic sentinel ask in deny mode without prompting", async () => {
+    const { runner, deps } = makeGateRunner({
+      mode: "deny",
+      resolveResult: makeCheckResult({
+        state: "ask",
+        matchedPattern: "<unparseable-bash-command>",
+      }),
+    });
+
+    const result = await runner.run(makeDescriptor(), null);
+
+    expect(result).toMatchObject({ action: "block" });
+    expect(deps.escalate).not.toHaveBeenCalled();
+    expect(deps.reporter.writeReviewLog).toHaveBeenCalledWith(
+      "permission_request.blocked",
+      expect.objectContaining({
+        resolution: "policy_denied",
+        decidedBy: expect.objectContaining({ origin: "deny" }),
+      }),
+    );
+  });
+
+  it("passes an allow through without prompting in deny mode", async () => {
+    const { runner, deps } = makeGateRunner({
+      mode: "deny",
+      resolveResult: makeCheckResult({ state: "allow", matchedPattern: "ls" }),
+    });
+
+    const result = await runner.run(makeDescriptor(), null);
+
+    expect(result).toEqual({ action: "allow" });
+    expect(deps.escalate).not.toHaveBeenCalled();
+  });
+
   it("returns allow and emits user_approved when ask + user approves", async () => {
     const { runner, deps } = makeGateRunner({
       resolveResult: makeCheckResult({ state: "ask", matchedPattern: "*" }),

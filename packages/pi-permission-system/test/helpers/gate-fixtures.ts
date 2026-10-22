@@ -22,7 +22,7 @@ import type { InfrastructureReadScope } from "#src/path/pi-infrastructure-read";
 import type { ScopedPermissionResolver } from "#src/policy/permission-resolver";
 import type { SessionApprovalRecorder } from "#src/session/session-approval-recorder";
 import type { ToolPreviewFormatterOptions } from "#src/tool-input/tool-preview-formatter";
-import type { PermissionCheckResult } from "#src/types";
+import type { PermissionCheckResult, PermissionMode } from "#src/types";
 import { DECIDED_BY_HUMAN } from "./decision-fixtures";
 import { makeCheckResult } from "./handler-fixtures";
 import {
@@ -163,6 +163,10 @@ export function makeGateRunner(
     yolo?: boolean;
     /** Live yolo reader, for tests that toggle the setting between runs. */
     isYoloEnabled?: () => boolean;
+    /** Standing permission mode. */
+    mode?: PermissionMode;
+    /** Live mode reader, for tests that toggle the mode between runs. */
+    getMode?: () => PermissionMode;
   } = {},
 ) {
   const reporter = makeReporter(overrides.reporter);
@@ -183,14 +187,21 @@ export function makeGateRunner(
       state: "approved",
       decidedBy: DECIDED_BY_HUMAN,
     });
-  const isYoloEnabled =
-    overrides.isYoloEnabled ?? ((): boolean => overrides.yolo ?? false);
+  const modeOverride = overrides.mode;
+  const isYoloOverride = overrides.isYoloEnabled;
+  const getMode =
+    overrides.getMode ??
+    (modeOverride !== undefined
+      ? () => modeOverride
+      : isYoloOverride !== undefined
+        ? () => (isYoloOverride() ? "yolo" : "normal")
+        : () => (overrides.yolo ? "yolo" : "normal"));
   const runner = new GateRunner(
     { resolve },
     { recordSessionApproval },
     { escalate },
     reporter,
-    isYoloEnabled,
+    getMode,
   );
   return {
     runner,

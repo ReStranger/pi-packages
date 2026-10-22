@@ -1,7 +1,11 @@
 import { buildResolvedIntentFromMatchValues } from "#src/access-intent/input-normalizer";
 import type { ServingPolicy } from "#src/authority/forwarded-request-server";
 import type { ForwardedAccessIntent } from "#src/authority/permission-forwarding";
-import type { AskingBashUnit, PermissionCheckResult } from "#src/types";
+import type {
+  AskingBashUnit,
+  PermissionCheckResult,
+  PermissionMode,
+} from "#src/types";
 import type { PermissionResolver } from "./permission-resolver";
 import { mostRestrictiveOf } from "./restrictiveness";
 
@@ -23,10 +27,17 @@ import { mostRestrictiveOf } from "./restrictiveness";
  * why this goes through `resolve` rather than the manager directly (#712, #806).
  */
 export class ResolverServingPolicy implements ServingPolicy {
+  private readonly getMode: () => PermissionMode;
+
   constructor(
     private readonly resolver: Pick<PermissionResolver, "resolve">,
-    private readonly isYoloEnabled: () => boolean,
-  ) {}
+    modeOrYolo: (() => PermissionMode) | (() => boolean) = () => "normal",
+  ) {
+    this.getMode = () => {
+      const res = modeOrYolo();
+      return typeof res === "boolean" ? (res ? "yolo" : "normal") : res;
+    };
+  }
 
   resolve(intent: ForwardedAccessIntent): PermissionCheckResult {
     const units = intent.askingUnits ?? [];
@@ -54,7 +65,7 @@ export class ResolverServingPolicy implements ServingPolicy {
       spellings: [],
       agentName,
     });
-    return honorChildFloor(check, unit.floor, this.isYoloEnabled());
+    return honorChildFloor(check, unit.floor, this.getMode());
   }
 
   /**
@@ -68,7 +79,7 @@ export class ResolverServingPolicy implements ServingPolicy {
         intent.principal.agentName,
       ),
     );
-    return honorChildFloor(check, intent.floor, this.isYoloEnabled());
+    return honorChildFloor(check, intent.floor, this.getMode());
   }
 }
 
@@ -87,7 +98,7 @@ export class ResolverServingPolicy implements ServingPolicy {
 function honorChildFloor(
   check: PermissionCheckResult,
   floor: string | undefined,
-  yoloEnabled: boolean,
+  mode: PermissionMode,
 ): PermissionCheckResult {
   if (
     floor === undefined ||
@@ -96,7 +107,16 @@ function honorChildFloor(
   ) {
     return check;
   }
-  return yoloEnabled
+  if (mode === "deny") {
+    return {
+      ...check,
+      state: "deny",
+      origin: "deny",
+      matchedPattern: floor,
+      reason: "Denied by deny mode",
+    };
+  }
+  return mode === "yolo"
     ? { ...check, origin: "yolo", matchedPattern: floor }
     : { ...check, state: "ask", matchedPattern: floor };
 }

@@ -21,6 +21,7 @@ import { type PathFlavor, posixPathFlavor } from "#src/path/path-flavor";
 import type {
   FlatPermissionConfig,
   PermissionCheckResult,
+  PermissionMode,
   PermissionState,
 } from "#src/types";
 import { isPermissionState } from "#src/types";
@@ -31,6 +32,7 @@ import {
   evaluateAnyValue,
   floorAllowsToAsk,
   isSurfaceFullyDenied,
+  rewriteAsksToDeny,
   rewriteAsksToYolo,
 } from "./rule";
 import { type MergedScopes, mergeScopesWithOrigins } from "./scope-merge";
@@ -45,8 +47,8 @@ const SPECIAL_PERMISSION_KEYS = new Set(["external_directory", "path"]);
 /** Universal fallback when permission["*"] is absent from all scopes. */
 const DEFAULT_UNIVERSAL_FALLBACK: PermissionState = "ask";
 
-/** Default yolo reader — yolo disabled unless the composition root injects one. */
-const YOLO_DISABLED = (): boolean => false;
+/** Default mode reader — normal mode unless the composition root injects one. */
+const DEFAULT_MODE = (): PermissionMode => "normal";
 
 type FileCacheEntry<TValue> = {
   stamp: string;
@@ -110,6 +112,12 @@ export interface PermissionManagerOptions extends PolicyLoaderOptions {
    */
   flavor?: PathFlavor;
   /**
+   * Live mode reader, read per check so a mid-session mode change takes effect.
+   * In yolo mode, ask rules rewrite to allow (origin "yolo").
+   * In deny mode, ask rules rewrite to deny (origin "deny").
+   */
+  getMode?: () => PermissionMode;
+  /**
    * yolo-mode reader, injected from the composition root. When it reports
    * true, {@link PermissionManager.check} rewrites every matched `ask` to a
    * standing `allow` tagged `origin: "yolo"` (recorded authority, #526).
@@ -122,6 +130,7 @@ export interface PermissionManagerOptions extends PolicyLoaderOptions {
 export class PermissionManager implements ScopedPermissionManager {
   private readonly agentDir: string | undefined;
   private readonly flavor: PathFlavor;
+  private readonly getMode: () => PermissionMode;
   private readonly isYoloEnabled: () => boolean;
   private loader: PolicyLoader;
   private readonly resolvedPermissionsCache = new Map<
@@ -132,7 +141,12 @@ export class PermissionManager implements ScopedPermissionManager {
   constructor(options: PermissionManagerOptions = {}) {
     this.agentDir = options.agentDir;
     this.flavor = options.flavor ?? posixPathFlavor;
-    this.isYoloEnabled = options.isYoloEnabled ?? YOLO_DISABLED;
+    this.getMode =
+      options.getMode ??
+      (options.isYoloEnabled !== undefined
+        ? () => (options.isYoloEnabled?.() ? "yolo" : "normal")
+        : DEFAULT_MODE);
+    this.isYoloEnabled = () => this.getMode() === "yolo";
     this.loader =
       options.policyLoader ??
       new FilePolicyLoader(
@@ -350,12 +364,16 @@ export class PermissionManager implements ScopedPermissionManager {
     const composedWithSession: Ruleset = sessionRules?.length
       ? [...composedRules, ...sessionRules]
       : composedRules;
-    // Apply the yolo rewrite post-cache so the resolved-permissions cache and
+    // Apply the yolo/deny rewrite post-cache so the resolved-permissions cache and
     // the display surfaces (getComposedConfigRules / getToolPermission) stay
-    // yolo-free — only the resolution path sees the ask→allow rewrite (#526).
-    const fullRules: Ruleset = this.isYoloEnabled()
-      ? rewriteAsksToYolo(composedWithSession)
-      : composedWithSession;
+    // rewrite-free — only the resolution path sees the rewrite.
+    const mode = this.getMode();
+    const fullRules: Ruleset =
+      mode === "yolo"
+        ? rewriteAsksToYolo(composedWithSession)
+        : mode === "deny"
+          ? rewriteAsksToDeny(composedWithSession)
+          : composedWithSession;
 
     if (intent.kind === "path-values") {
       const lookupValues =

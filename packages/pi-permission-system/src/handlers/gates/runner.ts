@@ -12,6 +12,7 @@ import {
 } from "#src/presentation/agent-renderer";
 import { renderReviewLogFacts } from "#src/presentation/review-log-renderer";
 import type { SessionApprovalRecorder } from "#src/session/session-approval-recorder";
+import type { PermissionMode } from "#src/types";
 import type {
   DecisionEventFacts,
   GateDescriptor,
@@ -33,17 +34,26 @@ import type { GateOutcome } from "./types";
  * in `PermissionGateHandler.handleToolCall`.
  */
 export class GateRunner {
+  private readonly getMode: () => PermissionMode;
+  private readonly isYoloEnabled: () => boolean;
+
   constructor(
     private readonly resolver: ScopedPermissionResolver,
     private readonly recorder: SessionApprovalRecorder,
     private readonly prompter: AskEscalator,
     private readonly reporter: DecisionReporter,
     /**
-     * Live yolo reader, read per gate so a mid-session config change takes
-     * effect — the same closure `PermissionManager` receives.
+     * Live mode or yolo reader, read per gate so a mid-session change takes
+     * effect.
      */
-    private readonly isYoloEnabled: () => boolean,
-  ) {}
+    modeOrYolo: (() => PermissionMode) | (() => boolean) = () => "normal",
+  ) {
+    this.getMode = () => {
+      const res = modeOrYolo();
+      return typeof res === "boolean" ? (res ? "yolo" : "normal") : res;
+    };
+    this.isYoloEnabled = () => this.getMode() === "yolo";
+  }
 
   /**
    * Execute a gate: null → allow; bypass → log/emit side effects then allow;
@@ -90,7 +100,7 @@ export class GateRunner {
   ): Promise<GateOutcome> {
     // 1. Resolve permission state — what the descriptor already carries, or
     // via the resolver when it carries nothing.
-    const check =
+    const resolvedCheck =
       preResolvedCheckOf(descriptor) ??
       this.resolver.resolve({
         kind: "tool",
@@ -98,6 +108,18 @@ export class GateRunner {
         input: descriptor.input,
         agentName: agentName ?? undefined,
       });
+
+    // In deny mode, any ask (including post-resolution synthetic sentinels)
+    // is clamped to deny so it is blocked immediately without prompting.
+    const check =
+      this.getMode() === "deny" && resolvedCheck.state === "ask"
+        ? {
+            ...resolvedCheck,
+            state: "deny" as const,
+            origin: "deny" as const,
+            reason: "Denied by deny mode",
+          }
+        : resolvedCheck;
 
     // The fields every review-log write for this gate shares, whatever the
     // resolution — built once so a field added here reaches all of them. The
