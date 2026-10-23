@@ -37,7 +37,6 @@ import { registerPermissionSystemCommand } from "#src/config/config-modal";
 import { getGlobalConfigPath } from "#src/config/config-paths";
 import { ConfigStore } from "#src/config/config-store";
 import { resolveDialogKeys } from "#src/config/dialog-keys";
-import { isYoloModeEnabled } from "#src/config/extension-config";
 import { computeExtensionPaths } from "#src/config/extension-paths";
 import { PolicyIssueReporter } from "#src/config/policy-issue-reporter";
 import { GateRunner } from "#src/handlers/gates/runner";
@@ -52,6 +51,7 @@ import { PermissionManager } from "#src/policy/permission-manager";
 import { PermissionResolver } from "#src/policy/permission-resolver";
 import { ResolverServingPolicy } from "#src/policy/serving-policy";
 import { resolveRenderBudget } from "#src/presentation/dialog-renderer";
+import { emitModeChangedEvent } from "#src/service/permission-events";
 import { LocalPermissionsService } from "#src/service/permissions-service";
 import { PermissionServiceLifecycle } from "#src/service/service-lifecycle";
 import { PermissionSession } from "#src/session/permission-session";
@@ -66,6 +66,7 @@ import {
   SessionTurnPrep,
 } from "./handlers";
 import { getPermissionsService, type PermissionsService } from "./service";
+import type { PermissionMode } from "./types";
 
 export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
   const agentDir = getAgentDir();
@@ -108,15 +109,13 @@ export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
   let session: PermissionSession;
 
   // Declared after the `configStore` forward declaration so the reader can
-  // close over it; every call runs after configStore is assigned below. yolo is
-  // a composition-stage ask→allow rewrite (#526) that the gate runner extends
-  // to asks synthesized after resolution (#712), so both share this reader.
-  const isYoloEnabled = (): boolean => isYoloModeEnabled(configStore.current());
+  // close over it; every call runs after configStore is assigned below.
+  const getMode = (): PermissionMode => session.getSessionMode();
 
   const permissionManager = new PermissionManager({
     agentDir,
     flavor: hostFlavor,
-    isYoloEnabled,
+    getMode,
   });
 
   const logger = new PermissionSessionLogger({
@@ -200,7 +199,7 @@ export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
   // composed ruleset, agent-scoped to the requester (§3) — the match values
   // are used as fixed by the child, never re-derived through this session's
   // PathNormalizer/cwd (#597).
-  const servingPolicy = new ResolverServingPolicy(resolver, isYoloEnabled);
+  const servingPolicy = new ResolverServingPolicy(resolver, getMode);
 
   // Constructed here rather than beside the gate runner below: the serving
   // side broadcasts its own decisions, so both readers share one reporter over
@@ -273,6 +272,15 @@ export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
       authorizerSelection,
       logger,
     ),
+    (mode) => {
+      const ctx = session.getRuntimeContext();
+      if (ctx?.sessionManager) {
+        emitModeChangedEvent(pi.events, {
+          sessionId: ctx.sessionManager.getSessionId(),
+          mode,
+        });
+      }
+    },
   );
 
   // Subscribe to @gotgenes/pi-subagents' child lifecycle events so child
@@ -351,7 +359,7 @@ export default function piPermissionSystemExtension(pi: ExtensionAPI): void {
     sessionRules,
     authorizerSelection,
     reporter,
-    isYoloEnabled,
+    getMode,
   );
   // This node's ancestors in the current process. The gates read their
   // fact-shaping registrations through the inheriting lookups below, so a

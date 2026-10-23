@@ -23,6 +23,8 @@ export function makeFakePermissionsService(
     getToolAccessExtractor: vi.fn(),
     getToolInputFormatter: vi.fn(),
     registerAuthorizer: vi.fn(),
+    getSessionMode: vi.fn().mockReturnValue("normal"),
+    setSessionMode: vi.fn(),
     ...overrides,
   };
 }

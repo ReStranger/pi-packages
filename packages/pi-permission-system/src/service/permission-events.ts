@@ -9,6 +9,7 @@
  */
 
 import type { PromptRequestFacts } from "#src/presentation/prompt-payload";
+import type { PermissionMode } from "#src/types";
 
 /** Minimal event bus interface required by the emit helpers. */
 export interface PermissionEventBus {
@@ -33,6 +34,9 @@ export const PERMISSIONS_UI_PROMPT_CHANNEL = "permissions:ui_prompt";
 
 /** Emitted after every permission gate resolution. */
 export const PERMISSIONS_DECISION_CHANNEL = "permissions:decision";
+
+/** Emitted when the session's active permission mode changes. */
+export const PERMISSIONS_MODE_CHANGED_CHANNEL = "permissions:mode_changed";
 
 // ── permissions:ready ──────────────────────────────────────────────────────
 
@@ -185,6 +189,14 @@ export interface PermissionDecisionEvent {
   forwarding?: ForwardedPromptContext | null;
 }
 
+// ── permissions:mode_changed ───────────────────────────────────────────────
+
+/** Payload emitted on `permissions:mode_changed`. */
+export interface PermissionModeChangedEvent {
+  sessionId: string;
+  mode: PermissionMode;
+}
+
 // ── Emit helpers ───────────────────────────────────────────────────────────
 
 /**
@@ -236,5 +248,19 @@ export function emitDecisionEvent(
   } catch {
     // Broadcasts are best-effort. A throwing listener must not block the
     // permission gate from resolving.
+  }
+}
+
+/**
+ * Emit a `permissions:mode_changed` broadcast.
+ */
+export function emitModeChangedEvent(
+  events: PermissionEventBus,
+  event: PermissionModeChangedEvent,
+): void {
+  try {
+    events.emit(PERMISSIONS_MODE_CHANGED_CHANNEL, event);
+  } catch {
+    // Broadcasts are best-effort. A throwing listener must not block mode changes.
   }
 }

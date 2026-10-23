@@ -225,6 +225,8 @@ describe("service round-trip through the keyed locator", () => {
         {
           getPathNormalizer: () =>
             new PathNormalizer(posixPathFlavor, "/test/project"),
+          getSessionMode: () => "normal",
+          setSessionMode: vi.fn(),
         },
         new ToolInputFormatterRegistry(),
         new ToolAccessExtractorRegistry(),

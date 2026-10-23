@@ -21,7 +21,11 @@
 import type { Authorizer } from "#src/authority/authorizer";
 import type { ToolAccessExtractor } from "#src/tool-input/tool-access-extractor-registry";
 import type { ToolInputFormatter } from "#src/tool-input/tool-input-formatter-registry";
-import type { PermissionCheckResult, PermissionState } from "./types";
+import type {
+  PermissionCheckResult,
+  PermissionMode,
+  PermissionState,
+} from "./types";
 
 export type {
   Authorizer,
@@ -59,16 +63,23 @@ export type {
 export type {
   ForwardedPromptContext,
   PermissionDecisionEvent,
+  PermissionModeChangedEvent,
   PermissionsReadyEvent,
   PermissionUiPromptEvent,
   PermissionUiPromptSource,
 } from "#src/service/permission-events";
 export {
   PERMISSIONS_DECISION_CHANNEL,
+  PERMISSIONS_MODE_CHANGED_CHANNEL,
   PERMISSIONS_READY_CHANNEL,
   PERMISSIONS_UI_PROMPT_CHANNEL,
 } from "#src/service/permission-events";
-export type { PermissionCheckResult, PermissionState, ToolInputFormatter };
+export type {
+  PermissionCheckResult,
+  PermissionMode,
+  PermissionState,
+  ToolInputFormatter,
+};
 
 /** Process-global key for the session-keyed service map (ADR 0012 decision 2). */
 const SESSION_SERVICES_KEY = Symbol.for(
@@ -243,6 +254,18 @@ export interface PermissionsService extends PermissionQuery {
     name: string,
     authorize: Authorizer["authorize"],
   ): () => void;
+
+  /**
+   * Get the current effective permission mode of this session node.
+   * "normal" | "yolo" | "deny"
+   */
+  getSessionMode(): PermissionMode;
+
+  /**
+   * Set the session-scoped permission mode override for this session node.
+   * Does not persist to config.json; scoped to this session's lifetime.
+   */
+  setSessionMode(mode: PermissionMode): void;
 }
 
 /**

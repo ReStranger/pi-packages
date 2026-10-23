@@ -15,7 +15,11 @@ import {
   type ToolInputFormatterRegistrar,
   ToolInputFormatterRegistry,
 } from "#src/tool-input/tool-input-formatter-registry";
-import type { PermissionCheckResult, PermissionState } from "#src/types";
+import type {
+  PermissionCheckResult,
+  PermissionMode,
+  PermissionState,
+} from "#src/types";
 
 import { makeCheckResult } from "#test/helpers/handler-fixtures";
 
@@ -106,7 +110,14 @@ function makeService(overrides?: {
 }) {
   const resolver = overrides?.resolver ?? makeResolver();
   // The published service always answers against the parent session's cwd.
-  const session = { getPathNormalizer: () => normalizer };
+  let currentMode: PermissionMode = "normal";
+  const session = {
+    getPathNormalizer: () => normalizer,
+    getSessionMode: () => currentMode,
+    setSessionMode: (m: PermissionMode) => {
+      currentMode = m;
+    },
+  };
   const formatterRegistry =
     overrides?.formatterRegistry ?? makeFormatterRegistry();
   const accessExtractorRegistry =
@@ -366,5 +377,21 @@ describe("registerAuthorizer", () => {
       authorize,
     );
     expect(result).toBe(unsub);
+  });
+});
+
+describe("sessionMode", () => {
+  it("gets and sets session mode on the service", () => {
+    const { service } = makeService();
+    expect(service.getSessionMode()).toBe("normal");
+
+    service.setSessionMode("deny");
+    expect(service.getSessionMode()).toBe("deny");
+
+    service.setSessionMode("yolo");
+    expect(service.getSessionMode()).toBe("yolo");
+
+    service.setSessionMode("normal");
+    expect(service.getSessionMode()).toBe("normal");
   });
 });

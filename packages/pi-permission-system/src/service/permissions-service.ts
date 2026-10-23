@@ -17,7 +17,11 @@ import type {
   ToolInputFormatterLookup,
   ToolInputFormatterRegistrar,
 } from "#src/tool-input/tool-input-formatter-registry";
-import type { PermissionCheckResult, PermissionState } from "#src/types";
+import type {
+  PermissionCheckResult,
+  PermissionMode,
+  PermissionState,
+} from "#src/types";
 import { resolveBashAdvisoryCheck } from "./bash-advisory-check";
 
 /**
@@ -31,9 +35,11 @@ interface ResolverForService {
   isToolFullyDenied(toolName: string, agentName?: string): boolean;
 }
 
-/** Narrow session view: hands out the cwd-bound path normalizer. */
-interface PathNormalizerProvider {
+/** Narrow session view: hands out the cwd-bound path normalizer and mode operations. */
+interface SessionForService {
   getPathNormalizer(): PathNormalizer;
+  getSessionMode(): PermissionMode;
+  setSessionMode(mode: PermissionMode): void;
 }
 
 /**
@@ -49,12 +55,13 @@ interface PathNormalizerProvider {
 export class LocalPermissionsService implements PermissionsService {
   constructor(
     private readonly resolver: ResolverForService,
-    private readonly session: PathNormalizerProvider,
+    private readonly session: SessionForService,
     private readonly formatterRegistry: ToolInputFormatterRegistrar &
       ToolInputFormatterLookup,
     private readonly accessExtractorRegistry: ToolAccessExtractorRegistrar &
       ToolAccessExtractorLookup,
     private readonly authorizerRegistry: AuthorizerRegistrar,
+    private readonly onModeChanged?: (mode: PermissionMode) => void,
   ) {}
 
   checkPermission(
@@ -130,5 +137,14 @@ export class LocalPermissionsService implements PermissionsService {
     authorize: Authorizer["authorize"],
   ): ReturnType<PermissionsService["registerAuthorizer"]> {
     return this.authorizerRegistry.register(name, authorize);
+  }
+
+  getSessionMode(): PermissionMode {
+    return this.session.getSessionMode();
+  }
+
+  setSessionMode(mode: PermissionMode): void {
+    this.session.setSessionMode(mode);
+    this.onModeChanged?.(mode);
   }
 }
