@@ -9,6 +9,7 @@
     "../packages/pi-subagents-worktrees",
     "../packages/pi-session-tools",
     "../packages/pi-nocd",
+    "../packages/pi-permission-mode",
 
     { "source": "npm:@gotgenes/pi-colgrep", "extensions": [], "skills": [] },
     {
@@ -18,7 +19,12 @@
     },
     { "source": "npm:@gotgenes/pi-autoformat", "extensions": [], "skills": [] },
     {
-      "source": "npm:@gotgenes/pi-permission-system",
+      "source": "npm:@restranger/pi-permission-mode",
+      "extensions": [],
+      "skills": []
+    },
+    {
+      "source": "npm:@restranger/pi-permission-system",
       "extensions": [],
       "skills": []
     },
