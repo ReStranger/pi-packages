@@ -1,0 +1,60 @@
+{
+  "name": "@restranger/pi-permission-mode",
+  "version": "1.0.0",
+  "description": "Pi extension providing /permission-mode [normal|yolo|deny] to switch permission mode per session",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "imports": {
+    "#src/*": "./src/*",
+    "#test/*": "./test/*"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check . && eslint ."
+  },
+  "author": {
+    "name": "ReStranger",
+    "email": "restranger@disroot.org",
+    "url": "https://github.com/ReStranger"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ReStranger/pi-packages.git",
+    "directory": "packages/pi-permission-mode"
+  },
+  "homepage": "https://github.com/ReStranger/pi-packages/tree/main/packages/pi-permission-mode#readme",
+  "bugs": {
+    "url": "https://github.com/ReStranger/pi-packages/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.0.0",
+    "@restranger/pi-permission-system": ">=41.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@restranger/pi-permission-system": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
